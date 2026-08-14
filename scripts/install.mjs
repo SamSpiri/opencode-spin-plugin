@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Install spin.js plugin + Spin skill into opencode's default
+ * Install spin.js plugin + Spin and Pall skills into opencode's default
  * directories so they are auto-discovered (no opencode.json plugin entry needed).
  *
  * Run via: npm run install:opencode
@@ -17,7 +17,7 @@ const PLUGIN_DIR = join(OC_DIR, "plugins")
 async function installSkill(name) {
   const dir = join(OC_DIR, `skills/${name}`)
   await mkdir(dir, { recursive: true })
-  const docs = await readFile(`skills/${name}.md`, "utf8")
+  const docs = await readFile(`skills/${name}/SKILL.md`, "utf8")
   await writeFile(join(dir, "SKILL.md"), docs)
   console.log(`skill   -> ${join(dir, "SKILL.md")}`)
 }

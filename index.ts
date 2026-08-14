@@ -17,7 +17,8 @@
 
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
-import { join } from "path"
+import { dirname, join } from "path"
+import { fileURLToPath } from "url"
 import { readdir } from "fs/promises"
 import os from "os"
 import matter from "gray-matter"
@@ -676,6 +677,15 @@ export const SpinPlugin: Plugin = async (ctx) => {
   }
 
   const hooks = {
+    config: (config: any) => {
+      const skillsPath = join(dirname(fileURLToPath(import.meta.url)), "../skills")
+      config.skills ??= {}
+      config.skills.paths ??= []
+      if (!config.skills.paths.includes(skillsPath)) {
+        config.skills.paths.push(skillsPath)
+      }
+    },
+
     // Hook: Listen for session and worker events
     event: async ({ event }) => {
       // Early filter: skip events we don't handle

@@ -28,7 +28,7 @@ The primary installation path is OpenCode's npm plugin configuration:
 }
 ```
 
-Add this to `opencode.json` in a project or to `~/.config/opencode/opencode.json`, then restart OpenCode. OpenCode installs npm plugins at startup. This README describes the intended package configuration; npm availability for this launch must be verified separately.
+Add this to `opencode.json` in a project or to `~/.config/opencode/opencode.json`, then restart OpenCode. OpenCode installs npm plugins at startup. Spin automatically exposes its bundled `Spin` and `Pall` skills through the plugin; no separate skill installation is required.
 
 ### Pin a version
 
@@ -40,7 +40,7 @@ Add this to `opencode.json` in a project or to `~/.config/opencode/opencode.json
 
 ### Advanced: install the plugin and skills from a clone
 
-Use this path when you also want the bundled `Spin` and `Pall` skills:
+Use this path only when you need a local/global plugin copy instead of the npm installation:
 
 ```bash
 git clone https://github.com/SamSpiri/opencode-spin-plugin.git
@@ -52,7 +52,7 @@ npm run install:opencode
 The installer is repository-root based and must be run from the clone. It:
 
 - copies the built plugin to `~/.config/opencode/plugins/spin.js`;
-- copies `skills/{spin,pall}.md` to global OpenCode skill directories;
+- copies `skills/{spin,pall}/SKILL.md` to global OpenCode skill directories;
 - adds runtime dependencies to `~/.config/opencode/package.json` when absent;
 - removes matching legacy `kanrisha`/`knr` plugin entries and files to prevent duplicate instances;
 - removes the legacy `~/.config/opencode/skills/knr` directory.
