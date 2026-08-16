@@ -202,6 +202,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
   type PendingDispatch = {
     orchestratorSessionID: string
     workerSessionID: string
+    workerSlug?: string
     text: string
     agent?: string
     model?: ModelOverride
@@ -378,7 +379,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       : undefined
 
     return [
-      `${title} This message is Not visible for the user. ${details}${usageLine ? ` ${usageLine}` : ""}${sessionSummary ? ` ${sessionSummary}` : ""}${compacted ? "\nWorker context was compacted during this step." : ""}`,
+      `${dispatch.workerSlug ? `${dispatch.workerSlug} ` : ""}${title} This message is Not visible for the user. ${details}${usageLine ? ` ${usageLine}` : ""}${sessionSummary ? ` ${sessionSummary}` : ""}${compacted ? "\nWorker context was compacted during this step." : ""}`,
       text || "[Worker produced no text output]",
       ...(compacted
         ? [
@@ -552,6 +553,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
     workerSessionID: string,
     args: {
       text: string
+      title?: string
       agent?: string
       model: string
       comm?: "sync" | "async" | "off"
@@ -588,10 +590,15 @@ export const SpinPlugin: Plugin = async (ctx) => {
     const model = parseModelOverride(args.model)
     const comm = args.comm ?? "async"
     const maxTurns = Math.max(0, Math.floor(args.maxTurns ?? 10))
+    const sessionTitle =
+      args.title ??
+      (await ctx.client.session.get({ path: { id: workerSessionID } })).data.title
+    const workerSlug = sessionTitle.match(/^\[[^\]\r\n]+\]/)?.[0]
 
     const pendingDispatch: PendingDispatch = {
       orchestratorSessionID: toolCtx.sessionID,
       workerSessionID,
+      workerSlug,
       text: args.text,
       agent: args.agent,
       model,
@@ -812,7 +819,7 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
           title: tool.schema
             .string()
             .optional()
-            .describe("Human-readable label for the new worker session. Prefix with [WRK]."),
+            .describe("Human-readable label for the new worker session. Start with a non-empty slug in brackets, such as [X-YZ]."),
           ...(ENABLE_ALL_COMM_MODES
             ? {
                 comm: tool.schema
