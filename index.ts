@@ -386,6 +386,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
             "Worker context was compacted and may have lost substantial context. Before continuing, use spin-talk to ask the worker to re-read the relevant files, realign with the original task, estimate current progress, and create a new plan.",
           ]
         : []),
+      `Worker sessionID: ${dispatch.workerSessionID}.`,
     ].join("\n\n")
   }
 
@@ -658,7 +659,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       try {
         await relayToOrchestrator(pendingDispatch.orchestratorSessionID, {
           noReply: true,
-          text: `Worker dispatch failed. ${formatWorkerTarget(pendingDispatch)}\n\n${message}`,
+          text: `Worker dispatch failed. ${formatWorkerTarget(pendingDispatch)}\n\n${message}\n\nWorker session: ${pendingDispatch.workerSessionID}.`,
         })
       } catch {
         // Silently fail - plugin should not loop on notification errors
@@ -809,7 +810,7 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
           text: tool.schema.string().describe("The prompt to send"),
           model: tool.schema
             .string()
-            .describe('Model "provider/model" form, e.g. "github-copilot/gpt-5.4-mini"'),
+            .describe('Model "provider/model" form, e.g. "github-copilot/gpt-5.6-luna"'),
           agent: tool.schema
             .string()
             .optional()
@@ -819,7 +820,7 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
           title: tool.schema
             .string()
             .optional()
-            .describe("Human-readable label for the new worker session. Start with a non-empty slug in brackets, such as [X-YZ]."),
+            .describe("Human-readable label for the new worker session. Prefix with slug in brackets, such as [WRK]."),
           ...(ENABLE_ALL_COMM_MODES
             ? {
                 comm: tool.schema
