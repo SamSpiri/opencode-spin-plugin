@@ -374,9 +374,21 @@ export const SpinPlugin: Plugin = async (ctx) => {
       .join(" ")
 
     const tokens = usage?.tokens
+    const totalTokens = tokens
+      ? (tokens.input ?? 0) +
+        (tokens.output ?? 0) +
+        (tokens.cache?.read ?? 0) +
+        (tokens.cache?.write ?? 0)
+      : 0
+    const stepped = Math.floor(totalTokens / 50000) * 50000
     const usageLine = tokens
-      ? `tokens(${(tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.cache?.read ?? 0) + (tokens.cache?.write ?? 0)})`
+      ? `tokens(${stepped === 0 ? "<50k" : `${stepped / 1000}k`})`
       : undefined
+    const contextWarning =
+      tokens &&
+      (stepped === 300000 || (stepped >= 500000 && stepped % 100000 === 0))
+        ? `Context warning (user guidance): this worker session reached tokens(${stepped / 1000}k). Work quality degrades at this size — do not continue heavy coding here. Start a fresh worker session and brief it with a clear, self-contained summary of the problem, decisions so far, and current state; split the remaining work across new workers if that helps. Treat this session as retired for implementation, but keep it available via spin-talk for clarifications. Finalize important work well before tokens(500k) — past that point a worker may still seem usable, but its context is too polluted to trust.`
+        : undefined
 
     return [
       `${dispatch.workerSlug ? `${dispatch.workerSlug} ` : ""}${title} This message is Not visible for the user. ${details}${usageLine ? ` ${usageLine}` : ""}${sessionSummary ? ` ${sessionSummary}` : ""}${compacted ? "\nWorker context was compacted during this step." : ""}`,
@@ -387,6 +399,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
           ]
         : []),
       `Worker sessionID: ${dispatch.workerSessionID}.`,
+      ...(contextWarning ? [contextWarning] : []),
     ].join("\n\n")
   }
 

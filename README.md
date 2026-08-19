@@ -134,6 +134,8 @@ Dispatches are asynchronous by default. Spin listens for worker `session.idle` a
 
 If a worker context is compacted during a dispatch, the relay marks that fact. Before continuing, ask the worker to re-read the relevant files, realign with the original task, estimate progress, and create a new plan. Compaction may remove substantial working context.
 
+Relays report worker context size in 50k-token steps as `tokens(Nk)`. At 300k, 500k, and every 100k beyond, the relay appends a standing user-guidance warning to rotate to a fresh worker session because output quality degrades with very large contexts.
+
 ### Agent discovery
 
 Spin discovers primary agents from `.md` files under `~/.config/opencode/agent/` and the project’s `.opencode/agent/`. It also supplies built-in `build` and `plan` agents unless overridden, and respects disabled agents in the corresponding OpenCode configuration files.
