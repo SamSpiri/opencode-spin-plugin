@@ -42,10 +42,18 @@ Use `spin-session` exactly once per worker. Use `spin-talk` for every later step
 6. Switch to Judge using the smart model for final review.
 7. Ask the user whether to continue when review is complete.
 
+## Context size, rotation, and parallelism
+
+- Worker relays report context size in 50k-token steps as `tokens(Nk)`. At 300k the relay carries a soft notice; at 500k and every 100k beyond, a hard warning. Past 500k a worker may seem usable but is too polluted to trust — move substantive work elsewhere.
+- When a task implies large context (long exploration, big refactors, extensive testing), split it across worker sessions up front: sequential handoffs for dependent steps, parallel workers for independent tasks. You may dispatch to several workers before ending your turn; relays arrive as each completes.
+- A retiring worker may spawn its own successor workers and report their sessionIds in its final response. Record them — you can spin-talk those workers directly. Successors may still be busy finishing the retiring worker's last task; spin-talk errors ("still busy", "controlled by another orchestrator") are expected — retry later.
+- Your own orchestrator session gets the same notices. At 300k prepare to retire: keep coordination light, raise fresh workers, keep a running pointer-based summary. At 500k retire: spin exactly one successor orchestrator session (spin-session) and put the entire handover in that single prompt — no handover file — then give the user a final summary with the successor and worker sessionIds and stop. The successor continues the work.
+- Handovers are pointer-based everywhere: relay open items, decisions, and sessionIds, and say where to look (file paths) — never paste file contents into prompts.
+
 ## Rules
 
 - Reuse the same worker `sessionID` with `spin-talk`.
-- End the orchestrator turn after dispatching; worker results arrive asynchronously.
+- End the orchestrator turn after dispatching; worker results arrive asynchronously. You may dispatch to several independent workers before ending the turn (parallel work).
 - If context compaction is reported, ask the worker to re-read relevant files, realign with the task, estimate progress, and create a new plan before continuing.
 - Keep prompts concrete and evidence concise. Do not re-transfer context already present in the shared worker session.
 - A relayed worker response is already the last assistant message in that session. Do not copy or summarize it unless correcting, prioritizing, or redirecting the work.

@@ -240,6 +240,14 @@ export const SpinPlugin: Plugin = async (ctx) => {
   const ceoBusy = new Set<string>()
   const ceoQueue = new Map<string, Array<{ text: string; noReply: boolean }>>()
 
+  // Sessions that dispatched at least once (orchestrators). Their own context
+  // size is checked on idle and notices are injected when thresholds are
+  // crossed (last-seen stepped value per session, so jumps can't skip a notice).
+  const orchestratorSessions = new Set<string>()
+  const orchestratorLastSteps = new Map<string, number>()
+  // Last-seen stepped context size per worker session, for crossing detection.
+  const workerLastSteps = new Map<string, number>()
+
   // Event types this plugin handles - early filter to skip noise
   const handledEventTypes = new Set(["session.idle", "session.error"])
 
@@ -384,13 +392,22 @@ export const SpinPlugin: Plugin = async (ctx) => {
     const usageLine = tokens
       ? `tokens(${stepped === 0 ? "<50k" : `${stepped / 1000}k`})`
       : undefined
-    const contextWarning =
-      tokens &&
-      (stepped === 300000
-        ? "Context notice (user guidance): worker context reached tokens(300k); output quality degrades at this size. How to proceed is your call — finishing the current step here is fine, but prefer a fresh worker session for further substantive work. You can brief a new worker from the relay history you already hold; this session stays available via spin-talk for quick clarifications."
-        : stepped >= 500000 && stepped % 100000 === 0
-          ? `Context limit (user guidance): worker context reached tokens(${stepped / 1000}k) — past the trust boundary. Output may still seem usable but is too polluted to rely on. Do not continue substantive work in this session; move anything important to a fresh worker. The session remains queryable via spin-talk for reference only.`
-          : undefined)
+
+    // Crossing detection: fire when a threshold is crossed since the last
+    // observed step, so a jump (e.g. 250k -> 350k) can't skip the 300k notice.
+    // Highest crossed threshold wins; hard subsumes soft. Updating the map on
+    // every observation also re-arms notices after compaction shrinks context.
+    let contextWarning: string | undefined
+    if (tokens) {
+      const lastSeen = workerLastSteps.get(dispatch.workerSessionID) ?? 0
+      workerLastSteps.set(dispatch.workerSessionID, stepped)
+      const hardStep = stepped >= 500000 ? Math.floor(stepped / 100000) * 100000 : 0
+      if (hardStep > lastSeen) {
+        contextWarning = `Context limit (user guidance): worker context reached tokens(${stepped / 1000}k) — past the trust boundary. Output may still seem usable but is too polluted to rely on. Do not continue substantive work in this session; move anything important to a fresh worker. The session remains queryable via spin-talk for reference only.`
+      } else if (lastSeen < 300000 && stepped >= 300000) {
+        contextWarning = `Context notice (user guidance): worker context reached tokens(${stepped / 1000}k); output quality degrades at this size. How to proceed is your call — finishing the current step here is fine, but prefer fresh worker sessions for further substantive work, in parallel when the remaining tasks are independent. Brief successors with pointers — open items, decisions, file paths, sessionIds — never pasted file contents; use the relay history you already hold, or let the retiring worker spawn successors and report their sessionIds. A handover file also works when state is complex. Freshly spawned workers may still be busy finishing the retiring worker's last task — spin-talk errors are expected, retry later. This session stays available via spin-talk for quick clarifications.`
+      }
+    }
 
     return [
       `${dispatch.workerSlug ? `${dispatch.workerSlug} ` : ""}${title} This message is Not visible for the user. ${details}${usageLine ? ` ${usageLine}` : ""}${sessionSummary ? ` ${sessionSummary}` : ""}${compacted ? "\nWorker context was compacted during this step." : ""}`,
@@ -561,6 +578,46 @@ export const SpinPlugin: Plugin = async (ctx) => {
     }
   }
 
+  // Mirror the worker context notices for orchestrator sessions: on idle,
+  // check the orchestrator's own context size and inject a silent notice when
+  // a threshold is crossed (same crossing semantics as worker notices).
+  async function checkOrchestratorContext(sessionID: string) {
+    try {
+      const messages = await ctx.client.session.messages({
+        path: { id: sessionID },
+      })
+
+      const assistantMessages = messages.data.filter(isCompletedAssistantMessage)
+      const latest = assistantMessages[assistantMessages.length - 1]
+      if (!latest) return
+
+      const tokens = (latest.info as AssistantMessageInfo).tokens
+      if (!tokens) return
+
+      const totalTokens =
+        (tokens.input ?? 0) +
+        (tokens.output ?? 0) +
+        (tokens.cache?.read ?? 0) +
+        (tokens.cache?.write ?? 0)
+      const stepped = Math.floor(totalTokens / 50000) * 50000
+      const lastSeen = orchestratorLastSteps.get(sessionID) ?? 0
+      orchestratorLastSteps.set(sessionID, stepped)
+      const hardStep = stepped >= 500000 ? Math.floor(stepped / 100000) * 100000 : 0
+      const hard = hardStep > lastSeen
+      const soft = lastSeen < 300000 && stepped >= 300000
+      if (!hard && !soft) return
+
+      await sendPrompt(sessionID, {
+        noReply: true,
+        text: hard
+          ? `Orchestrator limit (user guidance): your session context reached tokens(${stepped / 1000}k) — past the trust boundary; this session is no longer reliable for coordination. Retire now: spin exactly one successor orchestrator session (spin-session, e.g. title "[ORCH] successor") and put the entire handover in that single prompt — no handover file. Keep it pointer-based: open items, decisions, worker sessionIds, and file paths to look at, never pasted file contents. Then give the user a final summary including the successor sessionID and stop; the successor continues the work.`
+          : `Orchestrator notice (user guidance): your session context reached tokens(${stepped / 1000}k); coordination quality degrades at this size. Prepare to retire: keep coordination light and raise fresh workers instead of working inline. Keep a running pointer-based summary — open items, decisions, worker sessionIds, where to look (file paths, not pasted contents) — so you can hand everything to one successor orchestrator in a single prompt when the limit hits.`,
+      })
+    } catch {
+      // Best effort - context notices must never break the idle handler
+    }
+  }
+
   // Shared dispatch: validates the worker sessionID isn't the orchestrator's
   // own, registers the dispatch, runs sync/async path, and returns the
   // standard "Prompt dispatched" message. Used by both spin-session (after it
@@ -577,6 +634,8 @@ export const SpinPlugin: Plugin = async (ctx) => {
     },
     toolCtx: { sessionID: string },
   ): Promise<string> => {
+    orchestratorSessions.add(toolCtx.sessionID)
+
     if (workerSessionID === toolCtx.sessionID) {
       throw new Error("worker sessionID must be different from current session.")
     }
@@ -750,6 +809,9 @@ export const SpinPlugin: Plugin = async (ctx) => {
         }
 
         if (!activeDispatches.has(sessionID)) {
+          if (orchestratorSessions.has(sessionID)) {
+            await checkOrchestratorContext(sessionID)
+          }
           return
         }
 
