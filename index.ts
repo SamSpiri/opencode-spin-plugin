@@ -386,9 +386,11 @@ export const SpinPlugin: Plugin = async (ctx) => {
       : undefined
     const contextWarning =
       tokens &&
-      (stepped === 300000 || (stepped >= 500000 && stepped % 100000 === 0))
-        ? `Context warning (user guidance): this worker session reached tokens(${stepped / 1000}k). Work quality degrades at this size — do not continue heavy coding here. Start a fresh worker session and brief it with a clear, self-contained summary of the problem, decisions so far, and current state; split the remaining work across new workers if that helps. Treat this session as retired for implementation, but keep it available via spin-talk for clarifications. Finalize important work well before tokens(500k) — past that point a worker may still seem usable, but its context is too polluted to trust.`
-        : undefined
+      (stepped === 300000
+        ? "Context notice (user guidance): worker context reached tokens(300k); output quality degrades at this size. How to proceed is your call — finishing the current step here is fine, but prefer a fresh worker session for further substantive work. You can brief a new worker from the relay history you already hold; this session stays available via spin-talk for quick clarifications."
+        : stepped >= 500000 && stepped % 100000 === 0
+          ? `Context limit (user guidance): worker context reached tokens(${stepped / 1000}k) — past the trust boundary. Output may still seem usable but is too polluted to rely on. Do not continue substantive work in this session; move anything important to a fresh worker. The session remains queryable via spin-talk for reference only.`
+          : undefined)
 
     return [
       `${dispatch.workerSlug ? `${dispatch.workerSlug} ` : ""}${title} This message is Not visible for the user. ${details}${usageLine ? ` ${usageLine}` : ""}${sessionSummary ? ` ${sessionSummary}` : ""}${compacted ? "\nWorker context was compacted during this step." : ""}`,

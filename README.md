@@ -134,7 +134,7 @@ Dispatches are asynchronous by default. Spin listens for worker `session.idle` a
 
 If a worker context is compacted during a dispatch, the relay marks that fact. Before continuing, ask the worker to re-read the relevant files, realign with the original task, estimate progress, and create a new plan. Compaction may remove substantial working context.
 
-Relays report worker context size in 50k-token steps as `tokens(Nk)`. At 300k, 500k, and every 100k beyond, the relay appends a standing user-guidance warning to rotate to a fresh worker session because output quality degrades with very large contexts.
+Relays report worker context size in 50k-token steps as `tokens(Nk)`. At 300k the relay appends a soft notice to prefer a fresh worker session, leaving the mechanics to the orchestrator; at 500k and every 100k beyond, the notice is a hard warning that the worker's output is no longer trustworthy and substantive work should move elsewhere.
 
 ### Agent discovery
 
