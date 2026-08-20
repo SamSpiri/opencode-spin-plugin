@@ -14,7 +14,9 @@ This skill defines the mechanics of orchestration. The workflow comes from a sub
 - **spin-rnd** — development loops: investigation, design decisions, implementation gated by Judge approval.
 - **spin-ops** — system and infrastructure operations: deploys, config changes, service operations, ad-hoc commands.
 
-Load the matching sub-skill before dispatching. Load both when the task mixes them, and classify each segment of work by its own workflow. If none is loaded, dispatch Scout directly and apply the judge floor — that is the minimum workflow.
+Understand before classifying. A bare reference — ticket ID, issue link, path — is not a task: read the artifact yourself when it is a single small fetch, otherwise make fetching and summarizing it Scout's first dispatch. Never classify or dispatch from the reference alone.
+
+Load the matching sub-skill before dispatching. Load both when the task mixes them, and classify each segment of work by its own workflow. If the shape is genuinely ambiguous after comprehension, dispatch Scout directly and apply the judge floor — that is the minimum workflow.
 
 ## Roles
 
