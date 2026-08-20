@@ -1,6 +1,6 @@
 ---
 name: Spin
-description: Orchestrating multi-step task across model switches — the orchestrator's own skill; If the user mentions word spin or says "Spin <something>", read this and follow it when it makes sense. Don't load unless user asked.
+description: Load only when user tells you to. If the user says "spin <something>", with intention that you would apply some instructions to something. Then this and follow the content when it makes sense. Don't load unless user asked.
 ---
 
 # Spin Orchestrator
@@ -53,10 +53,10 @@ Use `spin-session` exactly once per worker. Use `spin-talk` for every later step
 
 - Worker relays report context size in 50k-token steps as `tokens(Nk)`. At 300k the relay carries a soft notice; at 500k and every 100k beyond, a hard warning. Past 500k a worker may seem usable but is too polluted to trust — move substantive work elsewhere.
 - When a task implies large context (long exploration, big refactors, extensive testing), split it across worker sessions up front: sequential handoffs for dependent steps, parallel workers for independent tasks — parallel pays off only at that scale; small independent tasks are cheaper in one session. You may dispatch to several workers before ending your turn; relays arrive as each completes.
-- A retiring worker may spawn its own successor workers and report their sessionIds in its final response. Record them — you can spin-talk those workers directly. Successors may still be busy finishing the retiring worker's last task; spin-talk errors ("still busy", "controlled by another orchestrator") are expected — retry later.
+- Ask retiring worker write a handover file. Then spin exactly one new session with fresh instructions and handover file.
 - Your own orchestrator session gets the same notices. At 300k decide how to finish: steer the current work to completion without taking on new work or new dispatches, or hand over to a successor orchestrator. At 500k retire: let in-flight workers finish or interrupt them, then — only once every worker is idle — spin exactly one successor orchestrator session (spin-session) and put the entire handover in that single prompt — no handover file — then give the user a final summary with the successor and worker sessionIds and stop. The successor continues the work.
 - Hand over only when every worker is idle, or when the user tells you to. Active workers relay results to the session that dispatched them; handing over mid-dispatch splits control between two orchestrators.
-- Handovers are pointer-based everywhere: relay open items, decisions, and sessionIds, and say where to look (file paths) — never paste file contents into prompts.
+- Handovers can be edited if necessary.
 
 ## Rules
 

@@ -1,6 +1,6 @@
 ---
 name: spin-rnd
-description: R&D workflow for the spin orchestrator. Load only if the "spin" skill is loaded. For code investigation, design decisions, implementation gated by Judge approval.
+description: R&D workflow. Load if you are "Spin" orchestrator. Load only if the "spin" skill is loaded. For code investigation, design decisions, implementation gated by approval.
 ---
 
 ## Workflow

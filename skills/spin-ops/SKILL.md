@@ -1,6 +1,6 @@
 ---
 name: spin-ops
-description: Operations workflow for the spin orchestrator. Load only if the "spin" skill is loaded for system and infrastructure work - deploys, config changes, service operations, ad-hoc commands.
+description: Operations workflow. Load if you are "Spin" orchestrator. Load only if the "spin" skill is loaded. For system and infrastructure investigations, deploys, config changes, service operations, ad-hoc commands.
 ---
 
 ## Workflow
