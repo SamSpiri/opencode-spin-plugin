@@ -1,11 +1,7 @@
 ---
 name: spin-rnd
-description: R&D workflow for the spin orchestrator (Scout-Judge loop). Load after the spin skill when the task involves code investigation, design decisions, or implementation gated by Judge approval. For pure system operations use spin-ops.
+description: R&D workflow for the spin orchestrator. Load only if the "spin" skill is loaded. For code investigation, design decisions, implementation gated by Judge approval.
 ---
-
-# Spin R&D Workflow
-
-Requires the spin skill — load it first if it is not in context. Roles, tools, judge floor, and session rules are defined there.
 
 ## Workflow
 

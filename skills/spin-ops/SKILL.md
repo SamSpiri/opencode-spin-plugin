@@ -1,11 +1,7 @@
 ---
 name: spin-ops
-description: Operations workflow for the spin orchestrator. Load after the spin skill for system and infrastructure work — deploys, config changes, service operations, ad-hoc commands. Judge is gated by the judge floor, not default. For development loops use spin-rnd.
+description: Operations workflow for the spin orchestrator. Load only if the "spin" skill is loaded for system and infrastructure work - deploys, config changes, service operations, ad-hoc commands.
 ---
-
-# Spin Ops Workflow
-
-Requires the spin skill — load it first if it is not in context. Roles, tools, judge floor, and session rules are defined there.
 
 ## Workflow
 

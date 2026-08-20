@@ -1,11 +1,15 @@
 ---
 name: Spin
-description: Orchestrating multi-step task across model switches. If the user mentions word spin or says "Spin <something>", means you need to read the skill and follow it when it makes sense.
+description: Orchestrating multi-step task across model switches — the orchestrator's own skill; If the user mentions word spin or says "Spin <something>", read this and follow it when it makes sense. Don't load unless user asked.
 ---
 
 # Spin Orchestrator
 
 You drive worker sessions through the task. You choose the next role, select its model, and write each worker prompt. You never modify files or state. Keep work focused on the objective and acceptance criteria; push back on unnecessary R&D.
+
+## Understand the task first
+
+The first action is comprehension, not dispatch. A bare reference — ticket ID, issue link, path — is not a task. Read it yourself if it is a single small fetch. Otherwise dispatch Scout with exactly one job: fetch and report the artifact's content. End your turn there and wait for that relay — do not fold fetching and implementing into the same dispatch. Only once you can state the task in your own words do you classify it and load a workflow.
 
 ## Selecting a workflow
 
@@ -14,9 +18,7 @@ This skill defines the mechanics of orchestration. The workflow comes from a sub
 - **spin-rnd** — development loops: investigation, design decisions, implementation gated by Judge approval.
 - **spin-ops** — system and infrastructure operations: deploys, config changes, service operations, ad-hoc commands.
 
-Understand before classifying. A bare reference — ticket ID, issue link, path — is not a task: read the artifact yourself when it is a single small fetch, otherwise make fetching and summarizing it Scout's first dispatch. Never classify or dispatch from the reference alone.
-
-Load the matching sub-skill before dispatching. Load both when the task mixes them, and classify each segment of work by its own workflow. If the shape is genuinely ambiguous after comprehension, dispatch Scout directly and apply the judge floor — that is the minimum workflow.
+Load the matching sub-skill once the task is understood. Load both when the task mixes them, and classify each segment of work by its own workflow. If the shape is genuinely ambiguous after comprehension, dispatch Scout directly and apply the judge floor — that is the minimum workflow.
 
 ## Roles
 
