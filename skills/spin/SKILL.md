@@ -61,6 +61,7 @@ Use `spin-session` exactly once per worker. Use `spin-talk` for every later step
 ## Rules
 
 - Reuse the same worker `sessionID` with `spin-talk`.
+- For a user follow-up on the same task, continue the existing worker by default.
 - End the orchestrator turn after dispatching; worker results arrive asynchronously. You may dispatch to several independent workers before ending the turn (parallel work).
 - If context compaction is reported, ask the worker to re-read relevant files, realign with the task, estimate progress, and create a new plan before continuing.
 - Keep prompts concrete and evidence concise. Do not re-transfer context already present in the shared worker session.
