@@ -71,7 +71,6 @@ Creates a new worker session and dispatches its first prompt.
 | `model` | Yes | Model in `provider/model` form, such as `github-copilot/gpt-5.4-mini` |
 | `agent` | No | Agent name; set only when a specific agent is requested |
 | `title` | No | Worker title; `[WRK]` is recommended |
-| `maxTurns` | No | Optional dispatch setting; defaults to `10` |
 
 ```text
 spin-session({
@@ -93,7 +92,6 @@ Sends a follow-up to an existing worker. Use this for every subsequent step. Pas
 | `text` | Yes | Follow-up prompt |
 | `model` | Yes | Model in `provider/model` form; switch models between steps |
 | `agent` | No | Optional agent override |
-| `maxTurns` | No | Optional dispatch setting; defaults to `10` |
 
 ```text
 spin-talk({
@@ -130,7 +128,7 @@ The bundled `spin` skill defines these orchestration mechanics; `spin-rnd` provi
 
 ### Async relays and turns
 
-Dispatches are asynchronous by default. Spin listens for worker `session.idle` and `session.error` events, reads the completed assistant message, and relays the result to the originating orchestrator. A worker can be controlled only after its previous result has been relayed. `maxTurns` is accepted as an optional dispatch setting; its enforcement is not presented as a guaranteed session-turn limit.
+Dispatches are asynchronous by default. Spin listens for worker `session.idle` and `session.error` events, reads the completed assistant message, and relays the result to the originating orchestrator. A worker can be controlled only after its previous result has been relayed. Async dispatches stop after 50 worker turns; this cap is fixed and is not configurable through the tools.
 
 ### Context compaction recovery
 

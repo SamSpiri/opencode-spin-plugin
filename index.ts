@@ -630,7 +630,6 @@ export const SpinPlugin: Plugin = async (ctx) => {
       agent?: string
       model: string
       comm?: "sync" | "async" | "off"
-      maxTurns?: number
     },
     toolCtx: { sessionID: string },
   ): Promise<string> => {
@@ -664,7 +663,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
     const model = parseModelOverride(args.model)
     const comm = args.comm ?? "async"
-    const maxTurns = Math.max(0, Math.floor(args.maxTurns ?? 10))
+    const maxTurns = 50
     const sessionTitle =
       args.title ??
       (await ctx.client.session.get({ path: { id: workerSessionID } })).data.title
@@ -908,10 +907,6 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
                   ),
               }
             : {}),
-          maxTurns: tool.schema
-            .number()
-            .optional()
-            .describe("Safety cap for number of interractions to the session. Default: 10. Don't set unless user asks for it."),
           ceo: tool.schema
             .boolean()
             .optional()
@@ -963,10 +958,6 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
                   ),
               }
             : {}),
-          maxTurns: tool.schema
-            .number()
-            .optional()
-            .describe("Safety cap for number of interractions to the session. Default: 10. Don't set unless user asks for it."),
           ceo: tool.schema
             .boolean()
             .optional()
