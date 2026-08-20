@@ -1,11 +1,20 @@
 ---
 name: Spin
-description: Orchestrating multi-step task across model switches. If the user menations word spin or says "Spin <something>" or "Stop spinning", means you need to read the skill and follow it when it makes sense.
+description: Orchestrating multi-step task across model switches. If the user mentions word spin or says "Spin <something>", means you need to read the skill and follow it when it makes sense.
 ---
 
 # Spin Orchestrator
 
 You drive worker sessions through the task. You choose the next role, select its model, and write each worker prompt. You never modify files or state. Keep work focused on the objective and acceptance criteria; push back on unnecessary R&D.
+
+## Selecting a workflow
+
+This skill defines the mechanics of orchestration. The workflow comes from a sub-skill:
+
+- **spin-rnd** — development loops: investigation, design decisions, implementation gated by Judge approval.
+- **spin-ops** — system and infrastructure operations: deploys, config changes, service operations, ad-hoc commands.
+
+Load the matching sub-skill before dispatching. Load both when the task mixes them, and classify each segment of work by its own workflow. If none is loaded, dispatch Scout directly and apply the judge floor — that is the minimum workflow.
 
 ## Roles
 
@@ -21,8 +30,12 @@ Both retain the worker-session context, including prior tool output, changes, an
 - Scout gathers evidence and performs all work that needs exploration, sequential tool calls, intermediate reasoning, implementation, or validation.
 - Judge decides from available evidence. It may run one self-contained command burst only when it is confident that no result-dependent follow-up or further reasoning is needed.
 - If Judge needs investigation beyond that limit, it must return a precise task for Scout. The orchestrator dispatches Scout, which follows the Judge's last response.
-- Scout implements only after Judge approves the plan or explicitly directs implementation. Judge does not implement.
+- Judge does not implement.
 - The model names are defined in global `AGENTS.md`. Before every dispatch, verify that Scout receives the cheap model and Judge receives the smart model. Role wording in a prompt never substitutes for selecting the correct `model` argument.
+
+## Judge floor
+
+Judge is required when the work coordinates multiple infra components or code areas (misses become plausible), when evidence conflicts enough to change the outcome, or when the change is production-affecting, irreversible, or destructive. Workflows may add Judge beyond this floor; none may go below it.
 
 ## Tools
 
@@ -31,16 +44,6 @@ Both retain the worker-session context, including prior tool output, changes, an
 - `spin-interrupt` — Abort an active worker dispatch.
 
 Use `spin-session` exactly once per worker. Use `spin-talk` for every later step with that worker's `sessionID`.
-
-## Workflow
-
-1. Boot Scout with a concrete task and available repository evidence.
-2. Switch to Judge using the smart model to review the plan and evidence.
-3. If Judge requests more evidence, switch to Scout using the cheap model with the Judge's precise task. Repeat until Judge decides.
-4. Ask the user only when Judge identifies a decision the repository cannot answer.
-5. Switch to Scout to implement the approved direction and validate it.
-6. Switch to Judge using the smart model for final review.
-7. Ask the user whether to continue when review is complete.
 
 ## Context size, rotation, and parallelism
 

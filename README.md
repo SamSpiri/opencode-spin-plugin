@@ -28,7 +28,7 @@ The primary installation path is OpenCode's npm plugin configuration:
 }
 ```
 
-Add this to `opencode.json` in a project or to `~/.config/opencode/opencode.json`, then restart OpenCode. OpenCode installs npm plugins at startup. Spin automatically exposes its bundled `Spin` and `Pall` skills through the plugin; no separate skill installation is required.
+Add this to `opencode.json` in a project or to `~/.config/opencode/opencode.json`, then restart OpenCode. OpenCode installs npm plugins at startup. Spin automatically exposes its bundled `Spin`, `spin-rnd`, `spin-ops`, and `Pall` skills through the plugin; no separate skill installation is required.
 
 ### Pin a version
 
@@ -52,7 +52,7 @@ npm run install:opencode
 The installer is repository-root based and must be run from the clone. It:
 
 - copies the built plugin to `~/.config/opencode/plugins/spin.js`;
-- copies `skills/{spin,pall}/SKILL.md` to global OpenCode skill directories;
+- copies `skills/{spin,spin-rnd,spin-ops,pall}/SKILL.md` to global OpenCode skill directories;
 - adds runtime dependencies to `~/.config/opencode/package.json` when absent;
 - removes matching legacy `kanrisha`/`knr` plugin entries and files to prevent duplicate instances;
 - removes the legacy `~/.config/opencode/skills/knr` directory.
@@ -125,6 +125,8 @@ Use a cheap model for exploration, a stronger model for review, and switch back 
 ```
 
 Each worker has its own context. Start separate `spin-session` calls for genuinely parallel work, then continue each with its own `sessionID`.
+
+The bundled `spin` skill defines these orchestration mechanics; `spin-rnd` provides the Scout-Judge development loop and `spin-ops` the direct operations workflow where Judge is dispatched only when the judge floor applies.
 
 ### Async relays and turns
 
