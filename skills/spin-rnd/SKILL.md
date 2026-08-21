@@ -18,6 +18,7 @@ description: R&D workflow. Load if you are "Spin" orchestrator. Load only if the
 - Scout implements only after Judge approves the plan or explicitly directs implementation.
 - After Scout produces a plan, dispatch Judge with `spin-talk` to the same Scout `sessionID`. Do not use `spin-session` for Judge. The shared session preserves the investigation, evidence, and plan; breadth, risk, or multiple concerns are reasons to invoke Judge, not reasons to create a separate Judge session.
 - Skip a Judge turn when Scout's result is trivial — a lookup, a localized fix, or a mechanical change with one obvious answer. Dispatch the next Scout step directly.
+- Before dispatching final review, make sure Scout's relay already contains the diff and test/validation output. Do not ask Judge to "inspect the changes, especially A, B, C" — that is Scout's job. Ask Judge to decide approval or precise fixes from what's already relayed.
 
 ## User input after acceptance
 
