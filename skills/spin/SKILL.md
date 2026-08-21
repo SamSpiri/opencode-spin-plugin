@@ -22,20 +22,10 @@ Load the matching sub-skill once the task is understood. Load both when the task
 
 ## Roles
 
-Two roles take turns in one shared worker session:
+Two roles alternate in one shared worker session: **Scout** (cheap model) explores, plans, implements, and validates; **Judge** (smart model) reviews evidence and decides. Full role definitions and discipline live in the **spin-worker** skill. Load it once yourself so you know what the worker will do, and instruct every new worker session — first boot, rotations, successors — to load it in its first dispatch before any task.
 
-- **Scout** uses the cheap model. It explores, diagnoses, plans, implements, and validates.
-- **Judge** uses the smart model. It reviews evidence, corrects direction, and makes hard decisions.
+Tell the worker which role it is acting as in natural language; do not repeat context already in the session.
 
-Both retain the worker-session context, including prior tool output, changes, and relayed responses. Tell the worker which role it is acting as in natural language; do not repeat context already in the session.
-
-### Boundaries
-
-- Scout gathers evidence and performs all work that needs exploration, sequential tool calls, intermediate reasoning, implementation, or validation.
-- Judge's default mode is reading: the diff, test output, and relay text already in session context. Judge does not go re-derive evidence Scout could have surfaced.
-- Judge may call tools only as a single round issued together (parallel calls allowed) with zero result-dependent follow-up — no reading one result to decide what to check next. A checklist of concerns to "inspect" (e.g. "check X, then Y, then Z") is not self-contained even if each item is individually small; that is investigation, and investigation belongs to Scout.
-- If review needs evidence beyond what's already in context, or needs more than one tool round, Judge returns a precise evidence request instead of chasing it itself. The orchestrator dispatches Scout with that request, Scout relays the evidence, and Judge resumes review in the same session — this costs the same as Judge doing it directly but on the cheap model.
-- Judge does not implement.
 - Role transitions do not create sessions. After Scout produces a plan, dispatch Judge with `spin-talk` to that Scout's `sessionID`; Judge must receive the Scout's investigation, evidence, and plan in the shared session. `spin-session` creates a replacement Scout only for context rotation or an independent workstream, never a separate Judge merely because the work is broad, risky, or spans several concerns.
 - The model names are defined in global `AGENTS.md`. Before every dispatch, verify that Scout receives the cheap model and Judge receives the smart model. Role wording in a prompt never substitutes for selecting the correct `model` argument.
 
@@ -54,7 +44,7 @@ For work needing a decision, use this pattern:
 
 User approval is a gate, not a substitute for Judge. If the user changes the objective, constraints, or angle at any gate, discard the pending plan and return to **Plan**. Never relay the changed request to Scout as an implementation instruction when no plan covers it.
 
-When writing the Judge prompt, never hand it a checklist of things to inspect — that reads as an investigation task and drives the expensive model through repeated tool-call/reasoning cycles. Before dispatching Judge, either confirm the needed evidence is already in the relayed session context, or send Scout to gather and relay it first. Judge's prompt should ask it to decide, not to explore.
+When writing the Judge prompt, never hand it a checklist of things to inspect — that reads as an investigation task and drives the expensive model through repeated tool-call/reasoning cycles. Before dispatching Judge, either confirm the needed evidence is already in the shared session context, or send Scout to read it in first. Judge's prompt should ask it to decide, not to explore.
 
 ## Tools
 
