@@ -22,7 +22,7 @@ Load the matching sub-skill once the task is understood. Load both when the task
 
 ## Roles
 
-Two roles alternate in one shared worker session: **Scout** (cheap model) explores, plans, implements, and validates; **Judge** (smart model) reviews evidence and decides. Full role definitions and discipline live in the **spin-worker** skill. Load it once yourself so you know what the worker will do, and instruct every new worker session — first boot, rotations, successors — to load it in its first dispatch before any task.
+Two roles alternate in one shared worker session: **Scout** (cheap model) explores, plans, implements, and validates; **Judge** (smart model) reviews evidence and decides. Full role definitions and discipline live in the **spin-worker** skill. Load it once yourself so you know what the worker will do. Ask a worker to load the skill only on the first dispatch of a new session — boot, rotations, successors, all via `spin-session`. Role switches via `spin-talk` never re-request the load: Scout and Judge share the session, and the skill is already in its context.
 
 Tell the worker which role it is acting as in natural language; do not repeat context already in the session.
 
