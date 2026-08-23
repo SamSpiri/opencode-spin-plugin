@@ -33,6 +33,10 @@ Tell the worker which role it is acting as in natural language; do not repeat co
 
 Judge is required when the work coordinates multiple infra components or code areas (misses become plausible), when evidence conflicts enough to change the outcome, or when the change is production-affecting, irreversible, or destructive. Workflows may add Judge beyond this floor; none may go below it.
 
+## Resource gate
+
+Judge approval is never authorization to consume the user's money or time. Judge may assess whether the estimate and controls are adequate, but cannot close this gate. If a plan may incur real-money charges or material elapsed effort, stop before Action and obtain explicit user approval. 
+
 ## Plan–Judge–Action
 
 For work needing a decision, use this pattern:
