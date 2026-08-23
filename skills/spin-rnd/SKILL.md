@@ -9,7 +9,7 @@ description: R&D workflow. Load if you are "Spin" orchestrator. Load only if the
 2. **Judge:** Switch to Judge using the smart model to review the plan and evidence.
 3. If Judge requests more evidence, switch to Scout using the cheap model with the Judge's precise task. Repeat until Judge decides.
 4. Ask the user only when Judge identifies a decision the repository cannot answer.
-5. **Action:** Switch to Scout to implement the approved direction and validate it.
+5. **Action:** Switch to Scout (same session via `spin-talk`) to implement the approved direction and validate it.
 6. Switch to Judge using the smart model for final review.
 7. Ask the user whether to continue when review is complete.
 
@@ -28,6 +28,6 @@ After a Judge decision or at the user's gate, classify new input before dispatch
 - Substance correction while the approved direction still holds → Scout implements, Judge reviews the result.
 - Direction or material assumptions invalidated → discard the pending plan and restart at **Plan**. Do not ask Scout to implement the new idea before Judge review.
 
-When restarting, compare the displayed `tokens(Nk)` value with the cost of retaining the session. Reuse a small session whose evidence is still useful; for a large or obsolete session, start a fresh Scout session. Transfer a generous handover—reasoning, evidence, decisions, rejected options, state, open questions, paths, and validation—not merely a compact brief.
+When restarting, prefer to reuse the session via `spin-talk`. Start a fresh Scout session only when the session is at the soft notice (300k) or beyond, or its evidence is obsolete for the new direction. Transfer a generous handover—reasoning, evidence, decisions, rejected options, state, open questions, paths, and validation—not merely a compact brief.
 
 Unclear scope → take the middle variant.
