@@ -71,6 +71,7 @@ Creates a new worker session and dispatches its first prompt.
 | `model` | Yes | Model in `provider/model` form, such as `github-copilot/gpt-5.4-mini` |
 | `agent` | No | Agent name; set only when a specific agent is requested |
 | `title` | No | Worker title; `[WRK]` is recommended |
+| `relay` | No | Whether to relay worker results back to orchestrator (default `true`); set to `false` for successor orchestrators |
 
 ```text
 spin-session({
@@ -136,7 +137,7 @@ If a worker context is compacted during a dispatch, the relay marks that fact. B
 
 Relays report worker context size in 50k-token steps as `tokens(Nk)`. Notices fire when a threshold is crossed, not on exact equality, so a sudden jump (e.g. 250k to 350k) still triggers the 300k notice. At 300k the relay appends a soft notice to prefer fresh worker sessions — split into parallel workers only when a large amount of remaining work is expected — leaving the mechanics to the orchestrator; at 500k and every 100k beyond, the notice is a hard warning that the worker's output is no longer trustworthy and substantive work should move elsewhere. A retiring worker may spawn its own successor workers and report their sessionIds; those may still be busy at first contact, so `spin-talk` errors are expected until their current task settles.
 
-Orchestrator sessions receive matching notices about their own context — a soft notice at 300k to either steer the current work to completion without new work or new dispatches, or prepare a handover; and a hard warning at 500k and every 100k beyond to retire — injected silently into the session when the orchestrator goes idle. Retirement spins exactly one successor orchestrator with the entire handover in that single prompt. Handover happens only when every worker is idle — or when the user asks for it — since active workers relay results to the session that dispatched them, so handing over mid-dispatch would split control. Handovers are generous — open items, decisions, sessionIds, file paths, reasoning, and validation results — but never pasted file contents.
+Orchestrator sessions receive matching notices about their own context — a soft notice at 300k to either steer the current work to completion without new work or new dispatches, or prepare a handover; and a hard warning at 500k and every 100k beyond to retire — injected silently into the session when the orchestrator goes idle. Retirement writes a generous handover file and spins exactly one successor orchestrator via `spin-session` with `relay: false` referencing that file. Handover happens only when every worker is idle — or when the user asks for it — since active workers relay results to the session that dispatched them, so handing over mid-dispatch would split control. Handovers are generous — open items, decisions, sessionIds, file paths, reasoning, and validation results — but never pasted file contents.
 
 ### Agent discovery
 

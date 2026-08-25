@@ -208,6 +208,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
     model?: ModelOverride
     comm: CommMode
     maxTurns: number
+    relay: boolean
   }
 
   type ActiveDispatch = PendingDispatch & {
@@ -470,6 +471,10 @@ export const SpinPlugin: Plugin = async (ctx) => {
       return
     }
 
+    if (!settledDispatch.relay) {
+      return
+    }
+
     const errorBody = `Error: ${message}\n\nThe worker result could not be recovered. Send your next instruction when ready.`
 
     try {
@@ -527,6 +532,14 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
       const settledDispatch = removeActiveDispatch(sessionID, activeDispatch)
       if (!settledDispatch) return
+
+      if (!settledDispatch.relay) {
+        compactedWorkers.delete(sessionID)
+        if (orchestratorSessions.has(sessionID)) {
+          await checkOrchestratorContext(sessionID)
+        }
+        return
+      }
 
       const nextTurn = settledDispatch.turn + 1
       const text = extractTextParts(latest.parts)
@@ -610,8 +623,8 @@ export const SpinPlugin: Plugin = async (ctx) => {
       await sendPrompt(sessionID, {
         noReply: true,
         text: hard
-          ? `System Message. User doesn't see this:\n\nOrchestrator limit (user guidance): your session context reached tokens(${stepped / 1000}k) — past the trust boundary; this session is no longer reliable for coordination. Retire now: let in-flight workers finish or interrupt them, and once every worker is idle, spin exactly one successor orchestrator session (spin-session, e.g. title "[ORCH] successor") and put a generous handover in that single prompt — include reasoning, evidence, decisions, rejected alternatives, open items, worker sessionIds, file paths, and validation results. Then give the user a final summary including the successor sessionID and stop; the successor continues the work.\n\nEnd of System message.`
-           : `System Message. User doesn't see this:\n\nOrchestrator notice (user guidance): your session context reached tokens(${stepped / 1000}k); coordination quality degrades at this size and every follow-up pays for retained context. Decide how to finish: either steer the current work to completion without taking on new work or new dispatches, or hand over to a successor orchestrator. Hand over only once every worker is idle — active workers relay results to this session, and handing over mid-dispatch splits control between two orchestrators — unless the user tells you to hand over earlier. Make the handover generous: include reasoning, evidence, decisions, rejected alternatives, open items, worker sessionIds, file paths, and validation results; do not compress it to pointers alone or pasted file contents.\n\nEnd of System message.`,
+          ? `System Message. User doesn't see this:\n\nOrchestrator limit (user guidance): your session context reached tokens(${stepped / 1000}k) — past the trust boundary; this session is no longer reliable for coordination. Retire now: let in-flight workers finish or interrupt them, and once every worker is idle, write a generous handover file (including reasoning, evidence, decisions, rejected alternatives, open items, worker sessionIds, file paths, and validation results), spin exactly one successor orchestrator session (spin-session with relay: false, e.g. title "[ORCH] successor") referencing that handover file. Then give the user a final summary including the successor sessionID and stop; the successor continues the work.\n\nEnd of System message.`
+          : `System Message. User doesn't see this:\n\nOrchestrator notice (user guidance): your session context reached tokens(${stepped / 1000}k); coordination quality degrades at this size and every follow-up pays for retained context. Decide how to finish: either steer the current work to completion without taking on new work or new dispatches, or hand over to a successor orchestrator. Hand over only once every worker is idle — active workers relay results to this session, and handing over mid-dispatch splits control between two orchestrators — unless the user tells you to hand over earlier. Write a generous handover file (reasoning, evidence, decisions, rejected alternatives, open items, worker sessionIds, file paths, validation results), spin exactly one successor session (spin-session with relay: false) referencing that handover file, then stop. Make the handover generous; do not compress it to pointers alone or pasted file contents.\n\nEnd of System message.`,
       })
     } catch {
       // Best effort - context notices must never break the idle handler
@@ -630,6 +643,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       agent?: string
       model: string
       comm?: "sync" | "async" | "off"
+      relay?: boolean
     },
     toolCtx: { sessionID: string },
   ): Promise<string> => {
@@ -661,9 +675,15 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
     abortedWorkers.delete(workerSessionID)
 
+    const relay = args.relay ?? true
     const model = parseModelOverride(args.model)
     const comm = args.comm ?? "async"
     const maxTurns = 50
+
+    if (!relay && comm === "sync") {
+      throw new Error('relay: false cannot be combined with comm: "sync".')
+    }
+
     const sessionTitle =
       args.title ??
       (await ctx.client.session.get({ path: { id: workerSessionID } })).data.title
@@ -678,6 +698,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       model,
       comm,
       maxTurns,
+      relay,
     }
 
     if (comm === "sync") {
@@ -719,6 +740,22 @@ export const SpinPlugin: Plugin = async (ctx) => {
     }
 
     activeDispatches.set(workerSessionID, activeDispatch)
+
+    if (!pendingDispatch.relay) {
+      try {
+        await sendPrompt(workerSessionID, {
+          agent: pendingDispatch.agent,
+          model: pendingDispatch.model,
+          text: pendingDispatch.text,
+        })
+      } catch (error) {
+        activeDispatches.delete(workerSessionID)
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(message)
+      }
+
+      return `Prompt dispatched to detached session. ${formatWorkerTarget(pendingDispatch)}. Results will not be relayed back to this session.`
+    }
 
     sendPrompt(workerSessionID, {
       agent: pendingDispatch.agent,
@@ -853,6 +890,10 @@ export const SpinPlugin: Plugin = async (ctx) => {
           return
         }
 
+        if (!activeDispatch.relay) {
+          return
+        }
+
         const errorBody = `Error: ${errorLabel}\n\nThe worker has been aborted. Send your next instruction when ready.`
 
         try {
@@ -897,6 +938,12 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
             .string()
             .optional()
             .describe("Human-readable label for the new worker session. Prefix with slug in brackets, such as [WRK]."),
+          relay: tool.schema
+            .boolean()
+            .optional()
+            .describe(
+              "Whether to relay results back to this orchestrator session. Set to false when spawning a successor orchestrator or detached session. Default: true",
+            ),
           ...(ENABLE_ALL_COMM_MODES
             ? {
                 comm: tool.schema
@@ -1032,7 +1079,7 @@ EXAMPLE:
             if (waiter) {
               syncWaiters.delete(workerSessionID)
               waiter.reject(new Error("Worker interrupted by orchestrator"))
-            } else {
+            } else if (activeDispatch.relay) {
               const interruptBody = `Worker was interrupted by the orchestrator.\n\nThe worker has been aborted. Send your next instruction when ready.`
               try {
                 await relayToOrchestrator(activeDispatch.orchestratorSessionID, {
