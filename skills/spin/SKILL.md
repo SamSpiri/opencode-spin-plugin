@@ -42,11 +42,13 @@ Judge approval is never authorization to consume the user's money or time. Judge
 For work needing a decision, use this pattern:
 
 1. **Plan:** Scout investigates and proposes a plan; it does not implement.
-2. **Judge:** Switch directly to Judge without commenting on, summarizing, or refining Scout's plan. Judge reviews the evidence and plan, requests evidence, or approves/rejects the direction.
-3. **Action:** After approval, switch directly to Scout without restating the plan or prescribing implementation steps. Scout implements the approved plan and validates it.
+2. **Judge:** Judge reviews evidence and plan, requests evidence or approves/rejects the direction.
+3. **Action:** Scout implements the approved plan and validates it.
 4. **Judge:** Judge reviews the result when the workflow requires final review.
 
 User approval is a gate, not a substitute for Judge. If the user changes the objective, constraints, or angle at any gate, discard the pending plan and return to **Plan**. Never relay the changed request to Scout as an implementation instruction when no plan covers it.
+
+Switch between roles directly: do not comment on, summarize, or refine Scout's plan when dispatching Judge, and do not restate the plan or prescribe implementation steps when dispatching Scout for Action.
 
 When writing the Judge prompt, never hand it a checklist of things to inspect — that reads as an investigation task and drives the expensive model through repeated tool-call/reasoning cycles. Before dispatching Judge, either confirm the needed evidence is already in the shared session context, or send Scout to read it in first. Judge's prompt should ask it to decide, not to explore.
 
