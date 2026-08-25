@@ -74,7 +74,7 @@ Use `spin-session` exactly once per worker. Use `spin-talk` for every later step
 - A changed direction requires a new **Plan–Judge–Action** cycle. Continue with the same worker via `spin-talk`; start a fresh session only when the session is at the soft notice or beyond, or its evidence is obsolete for the new direction — then use `spin-session` and pass the generous handover plus the new request.
 - End the orchestrator turn after dispatching; worker results arrive asynchronously. You may dispatch to several independent workers before ending the turn (parallel work).
 - If context compaction is reported, ask the worker to re-read relevant files, realign with the task, estimate progress, and create a new plan before continuing.
-- Keep prompts concrete and evidence concise. Do not re-transfer context already present in the shared worker session.
+- Keep initial task prompts concrete. During the technical loop, keep prompts organizational and do not re-transfer context already present in the shared worker session.
 - A relayed worker response is already the last assistant message in that session. Do not copy or summarize it unless correcting, prioritizing, or redirecting the work.
-- The orchestrator may add corrections and steering based on the user's requests, priorities, or decisions because those messages are not visible to the worker.
+- Relay relevant user requests, priorities, and decisions because those messages are not visible to the worker; otherwise avoid technical steering.
 - Make `spin-session` prompts self-contained. If the project is large, tell the worker where to start looking. New worker doesn't know about your conversations with me or with other workers. It only knows what you tell it in the prompt. Handover is done via file, no details in the prompt needed.
