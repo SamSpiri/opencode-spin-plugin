@@ -7,7 +7,7 @@ description: R&D workflow. Load if you are "Spin" orchestrator. Load only if the
 
 1. **Plan:** Boot Scout with a concrete task and available repository evidence.
 2. **Judge:** Switch to Judge using the smart model to review the plan and evidence.
-3. If Judge requests more evidence, switch to Scout using the cheap model with the Judge's precise task. Repeat until Judge decides.
+3. If Judge requests more evidence, switch to Scout using the cheap model with the Judge's precise task. Repeat until Judge decides, within the planning budget: at most two Plan→Judge loops, then take the disagreement to the user.
 4. Ask the user only when Judge identifies a decision the repository cannot answer.
 5. **Action:** Switch to Scout (same session via `spin-talk`) to implement the approved direction and validate it.
 6. Switch to Judge using the smart model for final review.
@@ -18,6 +18,7 @@ description: R&D workflow. Load if you are "Spin" orchestrator. Load only if the
 - Scout implements only after Judge approves the plan or explicitly directs implementation.
 - After Scout produces a plan, dispatch Judge with `spin-talk` to the same Scout `sessionID`. Do not use `spin-session` for Judge. The shared session preserves the investigation, evidence, and plan; breadth, risk, or multiple concerns are reasons to invoke Judge, not reasons to create a separate Judge session.
 - Skip a Judge turn when Scout's result is trivial — a lookup, a localized fix, or a mechanical change with one obvious answer. Dispatch the next Scout step directly.
+- Rejecting a plan requires a directional error, a false assumption, or a critical caveat Scout missed. Detail preferences are notes attached to an approval, never a blocking round: code changes here are reversible and cheap to test, so a failed Action is faster evidence than another planning loop.
 - Before dispatching final review, make sure Scout has already read the diff and test/validation output into the session — Judge reviews from session context and must not need to re-derive it. Do not ask Judge to "inspect the changes, especially A, B, C"; ask it to decide approval or precise fixes from what is already in the session.
 
 ## User input after acceptance

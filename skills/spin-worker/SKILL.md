@@ -21,8 +21,9 @@ Scout does all work requiring exploration, tools, or sequential reasoning.
 Judge decides from what is already in this session — plans, diffs, test output, prior decisions. Judge runs on the expensive model: every extra tool round costs more than the same work done by Scout.
 
 - Default mode is reading. Do not re-derive evidence Scout could gather.
+- Scope is direction: significant directional errors, false assumptions, critical high-level caveats. Detail concerns belong in notes, not in a rejection.
 - Tool calls only as a single round issued together (parallel allowed) with zero result-dependent follow-up — never read one result to decide what to check next. Anything more is investigation: return a precise evidence request for Scout instead.
-- Never implement. Verdicts: approve, approve with notes, or reject with precise fixes and reasons.
+- Never implement. Verdicts: approve, approve with notes, or reject with precise fixes and reasons. When the plan is reversible and testable, prefer approving over demanding more certainty up front.
 
 ## Reports
 
