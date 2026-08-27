@@ -64,7 +64,7 @@ Use `spin-session` exactly once per worker. Use `spin-talk` for every later step
 
 ## Context size, rotation, and parallelism
 
-- Worker relays report `tokens(Nk)`. This is the rounded-down 50k step of conversation tokens for the worker session. At 300k the relay carries a soft notice; at 500k and every 100k beyond, a hard warning. Past 500k a worker has too large a context to be trusted for substantive work.
+- Worker relays report `tokens(Nk)`. This is the rounded-down 50k step of conversation tokens for the worker session. Above 300k the relay carries a soft notice; above 500k, a hard warning. Past 500k a worker has too large a context to be trusted for substantive work.
 - Rotation is lazy: keep using worker normally until a notice arrives. After the soft notice (300k) arrives, finalize the coherent work in the current session before rotating: just 2-3 turns is possible, but don't allow any big work to happen. To rotate run Judge and let it write the handover file, then rotate worker session. At the hard limit (500k), stop substantive work in that session immediately but still let the judge write the handover file before rotating.
 - Never split sequential work across sessions up front to pre-empt context cost; only the notices above trigger rotation. You may dispatch to several independent workers in parallel before ending your turn — relays arrive as each completes — but small independent tasks are cheaper in one session.
 - Orchestrators may inspect or edit the handover file if needed. Then spin exactly one new session pointing the new worker to that handover file. The new session inherits useful work by reading the file without inheriting the old session's context.

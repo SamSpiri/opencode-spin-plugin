@@ -242,12 +242,8 @@ export const SpinPlugin: Plugin = async (ctx) => {
   const ceoQueue = new Map<string, Array<{ text: string; noReply: boolean }>>()
 
   // Sessions that dispatched at least once (orchestrators). Their own context
-  // size is checked on idle and notices are injected when thresholds are
-  // crossed (last-seen stepped value per session, so jumps can't skip a notice).
+  // size is checked on idle.
   const orchestratorSessions = new Set<string>()
-  const orchestratorLastSteps = new Map<string, number>()
-  // Last-seen stepped context size per worker session, for crossing detection.
-  const workerLastSteps = new Map<string, number>()
 
   // Event types this plugin handles - early filter to skip noise
   const handledEventTypes = new Set(["session.idle", "session.error"])
@@ -394,18 +390,11 @@ export const SpinPlugin: Plugin = async (ctx) => {
       ? `tokens(${stepped === 0 ? "<50k" : `${stepped / 1000}k`})`
       : undefined
 
-    // Crossing detection: fire when a threshold is crossed since the last
-    // observed step, so a jump (e.g. 250k -> 350k) can't skip the 300k notice.
-    // Highest crossed threshold wins; hard subsumes soft. Updating the map on
-    // every observation also re-arms notices after compaction shrinks context.
     let contextWarning: string | undefined
     if (tokens) {
-      const lastSeen = workerLastSteps.get(dispatch.workerSessionID) ?? 0
-      workerLastSteps.set(dispatch.workerSessionID, stepped)
-      const hardStep = stepped >= 500000 ? Math.floor(stepped / 100000) * 100000 : 0
-      if (hardStep > lastSeen) {
+      if (stepped >= 500000) {
         contextWarning = `Context limit (user guidance): worker context reached tokens(${stepped / 1000}k) — past the trust boundary. Output may still seem usable but is too polluted to rely on. Do not continue substantive work in this session; move anything important to a fresh worker. The session remains queryable via spin-talk for reference only.`
-      } else if (lastSeen < 300000 && stepped >= 300000) {
+      } else if (stepped >= 300000) {
         contextWarning = `Context notice (user guidance): worker context reached tokens(${stepped / 1000}k); output quality degrades at this size. Every follow-up also pays for retained context, so prefer a fresh worker for a new substantive direction. If rotating, ask the retiring worker for a generous handover containing reasoning, evidence, decisions, rejected alternatives, state, open questions, file paths, and validation results—not merely pointers or a compact brief. Freshly spawned workers may still be busy finishing the retiring worker's last task — spin-talk errors are expected, retry later. This session stays available via spin-talk for quick clarifications.`
       }
     }
@@ -613,13 +602,9 @@ export const SpinPlugin: Plugin = async (ctx) => {
         (tokens.cache?.read ?? 0) +
         (tokens.cache?.write ?? 0)
       const stepped = Math.floor(totalTokens / 50000) * 50000
-      const lastSeen = orchestratorLastSteps.get(sessionID) ?? 0
-      orchestratorLastSteps.set(sessionID, stepped)
-      const hardStep = stepped >= 500000 ? Math.floor(stepped / 100000) * 100000 : 0
-      const hard = hardStep > lastSeen
-      const soft = lastSeen < 300000 && stepped >= 300000
-      if (!hard && !soft) return
+      if (stepped < 300000) return
 
+      const hard = stepped >= 500000
       await sendPrompt(sessionID, {
         noReply: true,
         text: hard
