@@ -71,6 +71,11 @@ Use `spin-session` exactly once per worker. Use `spin-talk` for every later step
 - Your own orchestrator session gets the same notices. At 300k decide how to finish: steer the current work to completion without taking on new work or new dispatches, or hand over to a successor orchestrator. At 500k retire: let in-flight workers finish or interrupt them, then — only once every worker is idle — write a generous handover file (including reasoning, evidence, decisions, rejected alternatives, open items, worker sessionIds, file paths, and validation results), spin exactly one successor orchestrator session (`spin-session` with `relay: false`) referencing that handover file, then give the user a final summary with the successor and worker sessionIds and stop. The successor reads the file and continues the work.
 - Hand over only when every worker is idle, or when the user tells you to. Active workers relay results to the session that dispatched them; handing over mid-dispatch splits control between two orchestrators.
 
+## Worker session references
+
+When referring to worker or successor sessions in messages to the user, always format them as native HTML links using the bare `sessionID` as `href` and the session's title as link text:
+`<a href="SESSION_ID">SESSION_TITLE</a>` e.g. `<a href="ses_12345">[WRK] Investigate memory leak</a>`, no Markdown links or full URLs with hosts or leading slashes.
+
 ## Rules
 
 - Reuse the same worker `sessionID` with `spin-talk`.
