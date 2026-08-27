@@ -393,9 +393,9 @@ export const SpinPlugin: Plugin = async (ctx) => {
     let contextWarning: string | undefined
     if (tokens) {
       if (stepped >= 500000) {
-        contextWarning = `Context limit (user guidance): worker context reached tokens(${stepped / 1000}k) — past the trust boundary. Output may still seem usable but is too polluted to rely on. Do not continue substantive work in this session; move anything important to a fresh worker. The session remains queryable via spin-talk for reference only.`
+        contextWarning = `Context limit (user guidance): worker context reached tokens(${stepped / 1000}k) — past the trust boundary. Output may still seem usable but is too polluted to rely on. Do not continue substantive work in this session; move anything important to a fresh worker. Retierd worker remains queryable via spin-talk for reference only.`
       } else if (stepped >= 300000) {
-        contextWarning = `Context notice (user guidance): worker context reached tokens(${stepped / 1000}k); output quality degrades at this size. Every follow-up also pays for retained context, so prefer a fresh worker for a new substantive direction. If rotating, ask the retiring worker for a generous handover containing reasoning, evidence, decisions, rejected alternatives, state, open questions, file paths, and validation results—not merely pointers or a compact brief. Freshly spawned workers may still be busy finishing the retiring worker's last task — spin-talk errors are expected, retry later. This session stays available via spin-talk for quick clarifications.`
+        contextWarning = `Context notice (user guidance): worker context reached tokens(${stepped / 1000}k); output quality degrades at this size. Every follow-up also pays for retained context, so prefer a fresh worker for a new substantive direction. If rotating, ask the retiring worker for a generous handover file now. It should containing at least: reasoning, evidence, decisions, rejected alternatives, state, open questions, file paths, and validation results—not merely pointers or a compact brief. Retierd worker stays available via spin-talk for quick clarifications.`
       }
     }
 
