@@ -5,7 +5,7 @@ description: R&D workflow. Load if you are "Spin" orchestrator. Load only if the
 
 ## Workflow
 
-1. **Reconnaissance:** Boot Scout with the objective, constraints, success criteria, and useful starting points. Ask it to investigate the real implementation path and stop before making changes. Do not ask for an architecture document, detailed execution plan, pseudo-code, or file-by-file proposal.
+1. **Reconnaissance:** When a written task or handover exists, boot Scout with its reference and only unrecorded constraints or corrections; Scout reads the source and follows relevant references itself. If none exists, provide a concise objective, constraints, success criteria, and useful starting points. Ask Scout to investigate the real implementation path and stop before making changes. Do not reproduce source material or ask for an architecture document, detailed execution plan, pseudo-code, or file-by-file proposal.
 2. **Reflection:** Switch the same session to Judge using the smart model. Ask what Scout may be getting wrong and whether the evidence-backed direction is safe to attempt; do not give Judge an inspection checklist.
 3. If Judge requests a missing fact, switch to Scout using the cheap model to gather that evidence without changing state, then return to Judge. Allow at most two Reconnaissance→Judge loops; unresolved disagreement then goes to the user.
 4. If Judge asks the user or the action requires user authorization, stop without changes and obtain the decision.
