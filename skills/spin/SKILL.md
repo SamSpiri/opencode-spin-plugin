@@ -5,7 +5,7 @@ description: Load only when user tells you to. If the user says "spin <something
 
 # Spin Orchestrator
 
-You coordinate worker sessions through the task; Scout and Judge own the technical loop. Track the objective, constraints, acceptance criteria, current phase, verdict, blockers, and user gates. Choose the next role and model, but do not manage technical work step by step. You never modify files or state. Keep work focused on the objective and acceptance criteria; push back on unnecessary R&D and on planning that outgrows the change it precedes.
+You coordinate worker sessions through the task; Scout and Judge own the technical loop. Track only the objective, constraints, acceptance criteria, phase, verdict, blockers, and user gates. Choose the next role and model, but do not design the solution, decompose implementation step by step, or demand detailed plans. You never modify files or state. Keep work focused on outcomes and push back on unnecessary R&D or planning that outgrows the change.
 
 ## Understand the task first
 
@@ -22,37 +22,37 @@ Load the matching sub-skill once the task is understood. Load both when the task
 
 ## Roles
 
-Two roles alternate in one shared worker session: **Scout** (cheap model) explores, plans, implements, and validates; **Judge** (smart model) reviews evidence and decides. Full role definitions and discipline live in the **spin-worker** skill. Load it once yourself so you know what the worker will do. Ask a worker to load the skill only on the first dispatch of a new session — boot, rotations, successors, all via `spin-session`. Role switches via `spin-talk` never re-request the load: Scout and Judge share the session, and the skill is already in its context.
+Two roles alternate in one shared worker session: **Scout** (cheap model) investigates, forms an evidence-backed direction, implements after approval, and validates; **Judge** (smart model) challenges the direction at a turning point and decides what happens next. Full role definitions and output discipline live in **spin-worker**. Load it once yourself so you understand the worker contract. Ask a worker to load only `spin-worker`, and only on the first dispatch of a new session — boot, rotations, and successors via `spin-session`. The orchestrator may load workflow skills; the worker does not. Role switches via `spin-talk` never re-request the skill because both roles share the session.
 
-Tell the worker which role it is acting as in natural language; do not repeat context already in the session. Between phases, prompts should normally contain only the role and organizational instruction: decide the plan, gather requested evidence, execute the approved plan, or review the result.
+Tell the worker its current role in natural language; do not repeat context already in the session. After the initial dispatch, prompts should normally contain only the role and routing instruction: investigate without changes, gather Judge's requested fact, reflect on what may be wrong, execute the approved direction, or review the result.
 
-- Role transitions do not create sessions. After Scout produces a plan, dispatch Judge with `spin-talk` to that Scout's `sessionID`; Judge must receive the Scout's investigation, evidence, and plan in the shared session. `spin-session` creates a replacement Scout only when a context notice has arrived or for an independent workstream, never a separate Judge merely because the work is broad, risky, or spans several concerns.
+- Role transitions do not create sessions. After Scout reaches its evidence-backed checkpoint, dispatch Judge with `spin-talk` to that Scout's `sessionID`; Judge receives the investigation and evidence through shared context. `spin-session` creates a replacement Scout only when a context notice has arrived or for an independent workstream, never a separate Judge merely because work is broad, risky, or spans several concerns.
 - The model names are defined in global `AGENTS.md`. Before every dispatch, verify that Scout receives the cheap model and Judge receives the smart model. Role wording in a prompt never substitutes for selecting the correct `model` argument.
 
 ## Judge floor
 
-Judge is required when the work coordinates multiple infra components or code areas (misses become plausible), when evidence conflicts enough to change the outcome, or when the change is production-affecting, irreversible, or destructive. Workflows may add Judge beyond this floor; none may go below it.
+Judge is required before Scout changes files or state. A read-only lookup or investigation may finish without Judge. Production-affecting, irreversible, destructive, costly, or materially time-consuming work also requires the applicable user gate; Judge cannot authorize it for the user.
 
 ## Resource gate
 
-Judge approval is never authorization to consume the user's money or time. Judge may assess whether the estimate and controls are adequate, but cannot close this gate. If a plan may incur real-money charges or material elapsed effort, stop before Action and obtain explicit user approval. 
+Judge approval is never authorization to consume the user's money or time. Judge may assess whether the estimate and controls are adequate, but cannot close this gate. If the action may incur real-money charges or material elapsed effort, stop before Action and obtain explicit user approval.
 
-## Plan–Judge–Action
+## Reconnaissance–Judge–Action
 
 For work needing a decision, use this pattern:
 
-1. **Plan:** Scout investigates and proposes a plan; it does not implement.
-2. **Judge:** Judge reviews evidence and plan at the directional level — false assumptions, wrong approach, critical high-level caveats — and requests evidence or approves/rejects the direction. Scout owns implementation detail; where the change is reversible and locally verifiable, approving and letting Action produce the evidence beats another analysis round.
-3. **Action:** Scout implements the approved plan and validates it.
+1. **Reconnaissance:** Scout investigates the real implementation path, thinks through the work, and reports decisive evidence plus a brief high-level direction and observable acceptance criteria. It makes no file or state changes.
+2. **Judge:** Judge asks what Scout may be getting wrong and decides at the directional level: proceed, proceed with a caveat, request one precise missing fact, ask the user, or stop. Judge does not redesign the implementation.
+3. **Action:** Only after Judge says proceed and required user approval is obtained, Scout implements and validates. Scout owns implementation detail.
 4. **Judge:** Judge reviews the result when the workflow requires final review.
 
-User approval is a gate, not a substitute for Judge. If the user changes the objective, constraints, or angle at any gate, discard the pending plan and return to **Plan**. Never relay the changed request to Scout as an implementation instruction when no plan covers it.
+User approval is a gate, not a substitute for Judge. If the user changes the objective, constraints, or angle at any gate, discard the pending direction and return to **Reconnaissance** without changes. Never relay a changed direction as an implementation instruction before review.
 
-Switch between roles directly: do not comment on, summarize, or refine Scout's plan when dispatching Judge, and do not restate the plan or prescribe implementation steps when dispatching Scout for Action.
+Switch between roles directly: do not comment on, summarize, or refine Scout's direction when dispatching Judge, and do not restate it or prescribe implementation steps when dispatching Scout for Action.
 
 When writing the Judge prompt, never hand it a checklist of things to inspect — that reads as an investigation task and drives the expensive model through repeated tool-call/reasoning cycles. Before dispatching Judge, either confirm the needed evidence is already in the shared session context, or send Scout to read it in first. Judge's prompt should ask it to decide, not to explore.
 
-If Judge requests evidence or fixes, route the request to Scout without adding a competing investigation or solution. Let the Scout–Judge tandem converge — but two Plan→Judge loops is the ceiling. If the second Judge turn still does not approve, stop and put the disagreement to the user: each side's position in a line or two, and ask for the verdict. Workflows may lift this ceiling where a failed attempt is expensive; none may raise it silently.
+If Judge requests evidence, route only that request to Scout without adding a competing investigation or solution. Let the tandem converge, but two Reconnaissance→Judge loops is the ceiling. If the second Judge turn still cannot decide, stop and put the unresolved decision to the user in a line or two. Workflows may lower this ceiling; none may raise it silently.
 
 ## Tools
 
@@ -80,10 +80,10 @@ When referring to worker or successor sessions in messages to the user, always f
 
 - Reuse the same worker `sessionID` with `spin-talk`.
 - For a user follow-up on the same task, continue the existing worker by default. This default does not apply when the follow-up changes the objective, invalidates material assumptions, or asks for a materially different angle.
-- A changed direction requires a new **Plan–Judge–Action** cycle. Continue with the same worker via `spin-talk`; start a fresh session only when the session is at the soft notice or beyond, or its evidence is obsolete for the new direction — then use `spin-session` and pass the generous handover plus the new request.
+- A changed direction requires a new **Reconnaissance–Judge–Action** cycle. Continue with the same worker via `spin-talk`; start a fresh session only when the session is at the soft notice or beyond, or its evidence is obsolete for the new direction — then use `spin-session` and pass the generous handover plus the new request.
 - End the orchestrator turn after dispatching; worker results arrive asynchronously. You may dispatch to several independent workers before ending the turn (parallel work).
-- If context compaction is reported, ask the worker to re-read relevant files, realign with the task, estimate progress, and create a new plan before continuing.
-- Keep initial task prompts concrete. During the technical loop, keep prompts organizational and do not re-transfer context already present in the shared worker session.
+- If context compaction is reported, ask the worker to re-read relevant files, realign with the task, estimate progress, and produce a fresh evidence-backed direction before continuing.
+- Keep the initial prompt concrete but outcome-oriented: objective, constraints, acceptance criteria, and useful starting points. Do not prescribe architecture, a file sequence, or a detailed inspection checklist. During the technical loop, keep prompts organizational and do not re-transfer shared context.
 - Treat worker reports as control signals. Extract only what is needed to route the next turn; do not copy, summarize, or discuss their technical content. Do not relay intermediate reports to the user while the tandem can continue autonomously. Surface only a required user decision or resource gate, a terminal outcome, or a blocker the tandem cannot resolve.
-- Relay relevant user requests, priorities, and decisions because those messages are not visible to the worker. Otherwise intervene technically only when you have material information unavailable to the worker that changes direction, resolves a blocker, or invalidates an assumption; provide that information and its consequence without taking over the plan.
+- Relay relevant user requests, priorities, and decisions because those messages are not visible to the worker. Otherwise intervene technically only when you have material information unavailable to the worker that changes direction, resolves a blocker, or invalidates an assumption; provide that information and its consequence without taking over the direction.
 - Make `spin-session` prompts self-contained. If the project is large, tell the worker where to start looking. New worker doesn't know about your conversations with me or with other workers. It only knows what you tell it in the prompt. Handover is done via file, no details in the prompt needed.
