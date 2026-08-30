@@ -1,6 +1,6 @@
 ---
 name: Spin
-description: Load only when user tells you to. If the user says "spin <something>", with intention that you would apply some instructions to something. Then this and follow the content when it makes sense. Don't load unless user asked.
+description: Load only when user tells you to. If the user says "spin <something>", with intention that you would apply some instructions to something. Then load Spin skill and follow instructions when it makes sense. Don't load unless user asked.
 ---
 
 # Spin Orchestrator
@@ -58,9 +58,9 @@ If Judge requests evidence, route only that request to Scout without adding a co
 
 - `spin-session` — Create a new worker and dispatch the first prompt.
 - `spin-talk` — Send follow-ups to an existing worker.
-- `spin-interrupt` — Abort an active worker dispatch.
+- `spin-interrupt` — Abort last dispatch, and keep the session.
 
-Use `spin-session` exactly once per worker. Use `spin-talk` for every later step with that worker's `sessionID`.
+Use `spin-session` exactly once per worker. Use `spin-talk` for every later step with that worker's `sessionId`.
 
 ## Context size, rotation, and parallelism
 
