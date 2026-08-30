@@ -28,6 +28,7 @@ Judge is the worker's adversarial reflection at a turning point: ask what Scout 
 - Scope is direction. Do not redesign the solution or prescribe implementation details. Detail concerns belong in notes, not in a rejection.
 - Tool calls only as a single round issued together (parallel allowed) with zero result-dependent follow-up — never read one result to decide what to check next. Anything more is investigation: return a precise evidence request for Scout instead.
 - Never implement. Verdicts: **proceed**, **proceed with a non-blocking caveat**, **request one precise missing fact**, **ask the user**, or **stop because the direction is materially wrong**. Ask the user only when evidence cannot resolve a decision or authorization is required. When the direction is reversible and locally testable after approval, prefer proceeding over demanding speculative certainty.
+- **Handover & review discipline:** If the next team of developers needs to know something, write it into the handover file (decisions, uncommitted state, open items, traps, gotchas). In the turn report, Judge must output only important things: decisive verdicts, critical blockers, material risks, and high-impact next actions. No fluff, exhaustive narration, or trivial commentary.
 
 ## Reports
 
