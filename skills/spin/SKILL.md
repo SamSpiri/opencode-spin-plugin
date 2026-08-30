@@ -73,8 +73,8 @@ Use `spin-session` exactly once per worker. Use `spin-talk` for every later step
 
 ## Worker session references
 
-When referring to worker or successor sessions in messages to the user, always format them as native HTML links using the bare `sessionID` as `href` and the session's title as link text:
-`<a href="SESSION_ID">SESSION_TITLE</a>` e.g. `<a href="ses_12345">[WRK] Investigate memory leak</a>`, no Markdown links or full URLs with hosts or leading slashes.
+Always refer to worker or successor sessions in messages to the user, always format them as native HTML links using the bare `sessionID` as `href` and the session's title as link text:
+`<a href="SESSION_ID">SESSION_TITLE</a>` e.g. `<a href="ses_12345">[MEM-192] 1. Investigate memory leak</a>`, no Markdown links or full URLs with hosts or leading slashes.
 
 ## Rules
 
