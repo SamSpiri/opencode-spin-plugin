@@ -9,7 +9,7 @@ description: Operations workflow. Load if you are "Spin" orchestrator. Load only
 2. Scout investigates without changing state and reports its evidence-backed direction at the checkpoint defined in `spin-worker`.
 3. Dispatch Judge to challenge the direction. If Judge or the applicable user gate does not authorize action, leave state untouched.
 4. After approval, Scout executes and validates under the operations discipline defined in `spin-worker`: idempotent actions, status checks after changes, and before/after evidence.
-5. On each relay, dispatch the needed role, ask the user, finish, or report a blocker. Ask the user whether to continue when the objective is met or blocked.
+5. After Scout executes and validates, dispatch Judge to verify execution evidence, post-change status, and rollback posture. Do not declare an operational phase complete, hand over to another session, or advance to the next environment until Judge approves the outcome.
 
 ## Gates
 

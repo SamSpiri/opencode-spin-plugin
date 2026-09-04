@@ -10,7 +10,7 @@ description: R&D workflow. Load if you are "Spin" orchestrator. Load only if the
 3. If Judge requests a missing fact, switch to Scout using the cheap model to gather that evidence without changing state, then return to Judge. Allow at most two Reconnaissance→Judge loops; unresolved disagreement then goes to the user.
 4. If Judge asks the user or the action requires user authorization, stop without changes and obtain the decision.
 5. **Action:** After Judge says proceed and any user gate is closed, switch to Scout to implement the direction and validate observable acceptance criteria. Scout owns implementation details and may adapt locally as evidence emerges.
-6. Return to Judge only when the approved direction becomes invalid or final review is warranted by risk or scope. Ask the user whether to continue when work is complete or blocked.
+6. Judge verifies implementation.
 
 ## Judge turns
 
