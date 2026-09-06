@@ -42,7 +42,7 @@ Judge approval is never authorization to consume the user's money or time. Judge
 For work needing a decision, use this pattern:
 
 1. **Reconnaissance:** Scout investigates the real implementation path, thinks through the work, and reports decisive evidence plus a brief high-level direction and observable acceptance criteria. It makes no file or state changes.
-2. **Judge:** Judge asks what Scout may be getting wrong and decides at the directional level: proceed, proceed with a caveat, request one precise missing fact, ask the user, or stop. Judge does not redesign the implementation.
+2. **Judge:** Judge asks what Scout may be getting wrong and decides at the directional level: proceed, proceed with a caveat, request missing facts, ask the user, or stop. Judge may resolve one small ambiguity itself with a single parallel tool round; beyond that it delegates to Scout. Judge does not redesign the implementation.
 3. **Action:** Only after Judge says proceed and required user approval is obtained, Scout implements and validates. Scout owns implementation detail.
 4. **Judge:** Judge reviews the result when the workflow requires final review.
 
