@@ -254,6 +254,11 @@ export const SpinPlugin: Plugin = async (ctx) => {
   // OpenCode emits a pair (idle from abort + idle from session teardown) before the worker truly settles.
   const abortedWorkersIdleSwallowCount = 2
 
+  // Window for a late session.error to preempt a premature session.idle.
+  // UI Stop can emit idle before error; the deferred idle check drops if
+  // the error path removed the dispatch or armed the swallow in between.
+  const workerIdleSettleMs = 600
+
   function validateSessionID(sessionID: string): string | null {
     if (!sessionID.startsWith("ses")) {
       return `Invalid session ID format. Session IDs must start with "ses" (e.g. "ses_abc123xyz"). Got: "${sessionID}". Use spin-talk to send a follow-up to an existing worker (pass the sessionID returned from a previous spin-session/spin-talk call). Semantic names like "spin-plane-redux" are not valid session IDs.`
@@ -836,8 +841,23 @@ export const SpinPlugin: Plugin = async (ctx) => {
           return
         }
 
-        // Worker finished a dispatched turn, relay result back
-        await inspectWorkerResult(sessionID)
+        const pendingDispatch = activeDispatches.get(sessionID)!
+        if (pendingDispatch.comm === "sync") {
+          await inspectWorkerResult(sessionID)
+          return
+        }
+
+        // Deferred idle check: do not block the event loop so a trailing
+        // session.error can remove the dispatch or arm the swallow first.
+        // Exactly one silent notice per worker still comes from the error path.
+        if (!pendingDispatch.inspecting) {
+          void (async () => {
+            await new Promise((resolve) => setTimeout(resolve, workerIdleSettleMs))
+            if (activeDispatches.get(sessionID) !== pendingDispatch) return
+            if (abortedWorkers.has(sessionID)) return
+            await inspectWorkerResult(sessionID)
+          })()
+        }
       }
 
       // ===== Handle session.error =====

@@ -1,6 +1,6 @@
 ---
-name: Spin
-description: Load only when user tells you to. If the user says "spin <something>", with intention that you would apply some instructions to something. Then load Spin skill and follow instructions when it makes sense. Don't load unless user asked.
+name: spin
+description: Load only when user tells you to. If the user says "spin <something>", with intention that you would apply some instructions to something.
 ---
 
 # Spin Orchestrator
