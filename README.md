@@ -125,7 +125,7 @@ Use a cheap model for exploration, a stronger model for review, and switch back 
 
 Each worker has its own context. Start separate `spin-session` calls for genuinely parallel work, then continue each with its own `sessionID`.
 
-The bundled `spin` skill defines these orchestration mechanics; `spin-worker` defines the Scout/Judge role discipline that each worker session loads on the orchestrator's request; `spin-rnd` provides the Scout-Judge development loop and `spin-ops` the direct operations workflow where Judge is dispatched only when the judge floor applies.
+The bundled `spin` skill defines these orchestration mechanics; `spin-worker` defines the Scout/Judge role discipline that each worker session loads on the orchestrator's request; `spin-rnd` provides the Scout-Judge development loop and `spin-ops` the direct operations workflow where Judge is dispatched only when the judge floor applies; `ceo` sits above orchestrators and runs a program of independent tracks, one orchestrator each.
 
 ### Async relays and turns
 
