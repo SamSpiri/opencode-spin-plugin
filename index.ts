@@ -1247,6 +1247,19 @@ EXAMPLE:
           }
         },
       }),
+
+      "spin-id": tool({
+        description: `Return this session's own ID.
+
+Use it to learn the session ID you must hand to leads (or any inter-agent recipient) so they can report back to you. Copy the ID verbatim; never invent or abbreviate it.
+`,
+
+        args: {},
+
+        async execute(_args, toolCtx) {
+          return `Session ID: ${toolCtx.sessionID}`
+        },
+      }),
     },
   }
 

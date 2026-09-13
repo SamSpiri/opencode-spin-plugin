@@ -124,6 +124,14 @@ Aborts an active worker dispatch:
 spin-interrupt({ "sessionID": "ses_abc123xyz" })
 ```
 
+### `spin-id`
+
+Returns this session's own ID. Use it when a session must hand its ID to another session (for example, a CEO giving leads the address to report back to). Takes no arguments:
+
+```text
+spin-id({})
+```
+
 ## A practical workflow
 
 Use a cheap model for exploration, a stronger model for review, and switch back when implementation is routine:

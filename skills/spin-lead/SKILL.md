@@ -1,6 +1,6 @@
 ---
 name: spin-lead
-description: Load only when user tells you to. If the user says "spin <something>", with intention that you would apply some instructions to something.
+description: MUST load immediately whenever the user prompt begins with "spin " or instructs to spin/coordinate a task or workstream. Orchestrates worker sessions through the technical loop.
 ---
 
 # Spin Lead
