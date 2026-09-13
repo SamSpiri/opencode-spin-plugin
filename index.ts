@@ -1,14 +1,14 @@
 /**
  * OpenCode Spin Plugin
  *
- * Worker session orchestration with agent switching and cross-session control.
+ * Child session orchestration with agent switching and cross-session control.
  *
  * Features:
- * - Spawn worker sessions with initial prompts
- * - Send follow-up prompts to worker sessions
+ * - Spawn child sessions with initial prompts
+ * - Send follow-up prompts to child sessions
  * - Run one-shot boxed child sessions with model override (spin-box)
- * - Relay worker results back to lead sessions
- * - Multiple worker sessions per lead
+ * - Relay child results back to parent sessions
+ * - Multiple child sessions per parent
  *
  * @version 1.1.0
  * @license MIT
@@ -24,7 +24,12 @@ import { readdir } from "fs/promises"
 import os from "os"
 import matter from "gray-matter"
 
-const ENABLE_ALL_COMM_MODES = false
+// CLEANUP 2026-09-13: removed Head queue (headSessions/headQueue/deliverToHead),
+// sync/comm path (CommMode/syncWaiters/maxTurns/ENABLE_ALL_COMM_MODES) and
+// head:true flag (formerly CEO). Rationale: wake:false delivery to a busy
+// session is queued by opencode itself, so the plugin-side queue never fires;
+// sync was never used. Revert to the commit before this message if
+// wake:false-to-busy throws and the queue is needed again.
 
 interface AgentInfo {
   name: string
@@ -198,92 +203,49 @@ export const SpinPlugin: Plugin = async (ctx) => {
     modelID: string
   }
 
-  type CommMode = "sync" | "async" | "off"
-
   type PendingDispatch = {
-    leadSessionID: string
-    workerSessionID: string
-    workerSlug?: string
+    parentSessionID: string
+    childSessionID: string
+    childSlug?: string
     text: string
     agent?: string
     model?: ModelOverride
-    comm: CommMode
-    maxTurns: number
-    relay: boolean
+    reportBack: boolean
   }
 
   type ActiveDispatch = PendingDispatch & {
     dispatchedAt: number
     deadlineAt: number
     turn: number
-    lastWorkerMessageID?: string
+    lastChildMessageID?: string
     inspecting?: boolean
   }
 
-  // Store active worker dispatches waiting for worker result
+  // Store active child dispatches waiting for child result
   const activeDispatches = new Map<string, ActiveDispatch>()
 
-  // Store sync callers waiting for worker completion
-  const syncWaiters = new Map<
-    string,
-    {
-      resolve: (value: string) => void
-      reject: (reason: unknown) => void
-    }
-  >()
-
-  // Worker sessions that were interrupted; upcoming idle events are swallowed
-  const abortedWorkers = new Map<string, number>()
+  // Child sessions that were interrupted; upcoming idle events are swallowed
+  const abortedChildren = new Map<string, number>()
   // Sessions that compacted since their current dispatch started.
-  const compactedWorkers = new Set<string>()
+  const compactedChildren = new Set<string>()
 
-  // CEO mode: sessions opted in, plus silent reports waiting for a busy CEO.
-  // CEO sessions are user-driven: the plugin never wakes them. Every report
-  // to a CEO is delivered with noReply: true; only user input starts a turn.
-  const ceoSessions = new Set<string>()
-  const ceoQueue = new Map<
-    string,
-    Array<{ text: string; agent?: string; model?: ModelOverride }>
-  >()
-
-  function queueCeoReport(
-    sessionID: string,
-    item: { text: string; agent?: string; model?: ModelOverride },
-  ) {
-    const queued = ceoQueue.get(sessionID)
-    if (queued) queued.push(item)
-    else ceoQueue.set(sessionID, [item])
-  }
-
-  async function deliverToCeo(
-    sessionID: string,
-    item: { text: string; agent?: string; model?: ModelOverride },
-  ) {
-    try {
-      await sendPrompt(sessionID, { ...item, noReply: true })
-    } catch {
-      // Session busy; keep the report for the next idle drain.
-      queueCeoReport(sessionID, item)
-    }
-  }
-
-  // Sessions that dispatched at least once (leads). Their own context
+  // Sessions that dispatched at least once (parents). Their own context
   // size is checked on idle.
-  const leadSessions = new Set<string>()
+  const parentSessions = new Set<string>()
 
   // Event types this plugin handles - early filter to skip noise
   const handledEventTypes = new Set(["session.idle", "session.error"])
 
-  const workerResultRetryTimeoutMs = 36000000
+  const childResultRetryTimeoutMs = 36000000
 
   // Number of session.idle events to swallow after an interrupt/abort.
-  // OpenCode emits a pair (idle from abort + idle from session teardown) before the worker truly settles.
-  const abortedWorkersIdleSwallowCount = 2
+  // OpenCode emits a pair (idle from abort + idle from session teardown) before the child truly settles.
+  const abortedChildrenIdleSwallowCount = 2
 
   // Window for a late session.error to preempt a premature session.idle.
   // UI Stop can emit idle before error; the deferred idle check drops if
   // the error path removed the dispatch or armed the swallow in between.
-  const workerIdleSettleMs = 600
+  const childIdleSettleMs = 600
 
   function validateSessionID(sessionID: string): string | null {
     if (!sessionID.startsWith("ses")) {
@@ -314,7 +276,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       text: string
       agent?: string
       model?: ModelOverride
-      noReply?: boolean
+      wake?: boolean
     },
   ) {
     const body: {
@@ -328,7 +290,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
     if (options.agent) body.agent = options.agent
     if (options.model) body.model = options.model
-    if (options.noReply) body.noReply = true
+    if (options.wake === false) body.noReply = true
 
     return ctx.client.session.prompt({
       path: { id: sessionID },
@@ -336,16 +298,11 @@ export const SpinPlugin: Plugin = async (ctx) => {
     })
   }
 
-  async function relayToLead(
-    leadSessionID: string,
-    options: { text: string; noReply: boolean },
+  async function relayToParent(
+    parentSessionID: string,
+    options: { text: string; wake?: boolean },
   ) {
-    if (ceoSessions.has(leadSessionID)) {
-      // CEO sessions are user-driven: deliver silently, never wake them.
-      await deliverToCeo(leadSessionID, { text: options.text })
-      return
-    }
-    await sendPrompt(leadSessionID, options)
+    await sendPrompt(parentSessionID, options)
   }
 
   function extractTextParts(parts: Array<{ type: string; text?: string }>) {
@@ -384,7 +341,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
     )
   }
 
-  function formatWorkerResult(
+  function formatChildResult(
     dispatch: ActiveDispatch,
     text: string,
     usage?: { tokens?: AssistantMessageInfo["tokens"] },
@@ -393,7 +350,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
     title = "Step complete.",
   ) {
     const details = [
-      `sessionId=${dispatch.workerSessionID}`,
+      `sessionId=${dispatch.childSessionID}`,
       dispatch.agent ? `agent=${dispatch.agent}` : undefined,
       dispatch.model
         ? `model=${dispatch.model.providerID}/${dispatch.model.modelID}`
@@ -424,14 +381,14 @@ export const SpinPlugin: Plugin = async (ctx) => {
     }
 
     return [
-      `${dispatch.workerSlug ? `${dispatch.workerSlug} ` : ""}${title} This message is Not visible for the user. ${details}${usageLine ? ` ${usageLine}` : ""}${sessionSummary ? ` ${sessionSummary}` : ""}${compacted ? "\nSession context was compacted during this step." : ""}`,
+      `${dispatch.childSlug ? `${dispatch.childSlug} ` : ""}${title} This message is Not visible for the user. ${details}${usageLine ? ` ${usageLine}` : ""}${sessionSummary ? ` ${sessionSummary}` : ""}${compacted ? "\nSession context was compacted during this step." : ""}`,
       text || "[Session produced no text output]",
       ...(compacted
         ? [
             "Session context was compacted and may have lost substantial context. Before continuing, use spin-talk to ask the session to re-read the relevant files, realign with the original task, estimate current progress, and create a new plan.",
           ]
         : []),
-      `Session ID: ${dispatch.workerSessionID}.`,
+      `Session ID: ${dispatch.childSessionID}.`,
       ...(contextWarning ? [contextWarning] : []),
     ].join("\n\n")
   }
@@ -449,19 +406,19 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
     const slug = title.match(/^\[[^\]\r\n]+\]/)?.[0]
     return [
-      `${slug ? `${slug} ` : ""}Lead report. This message is not visible for the user. sessionId=${senderSessionID} title=${title}`,
-      text || "[Lead produced no text output]",
-      `Lead sessionID: ${senderSessionID}.`,
+      `${slug ? `${slug} ` : ""}Child report. This message is not visible for the user. sessionId=${senderSessionID} title=${title}`,
+      text || "[Child produced no text output]",
+      `Child sessionID: ${senderSessionID}.`,
     ].join("\n\n")
   }
 
-  function formatWorkerTarget(dispatch: {
-    workerSessionID: string
+  function formatChildTarget(dispatch: {
+    childSessionID: string
     agent?: string
     model?: ModelOverride
   }) {
     const details = [
-      `session=${dispatch.workerSessionID}`,
+      `session=${dispatch.childSessionID}`,
       dispatch.agent ? `agent=${dispatch.agent}` : undefined,
       dispatch.model
         ? `model=${dispatch.model.providerID}/${dispatch.model.modelID}`
@@ -492,27 +449,20 @@ export const SpinPlugin: Plugin = async (ctx) => {
     const settledDispatch = removeActiveDispatch(sessionID, dispatch)
     if (!settledDispatch) return
 
-    // Clean compaction flag before the sync short-circuit, so a retry on this
-    // session isn't falsely notified and the error relay can report it too.
-    const wasCompacted = compactedWorkers.delete(sessionID)
+    // Clean compaction flag so a retry on this session isn't falsely
+    // notified and the error relay can report it too.
+    const wasCompacted = compactedChildren.delete(sessionID)
 
-    const waiter = syncWaiters.get(sessionID)
-    if (waiter) {
-      syncWaiters.delete(sessionID)
-      waiter.reject(new Error(message))
-      return
-    }
-
-    if (!settledDispatch.relay) {
+    if (!settledDispatch.reportBack) {
       return
     }
 
     const errorBody = `Error: ${message}\n\nThe result could not be recovered. Send your next instruction when ready.`
 
     try {
-      await relayToLead(settledDispatch.leadSessionID, {
-        noReply: true,
-        text: formatWorkerResult(
+      await relayToParent(settledDispatch.parentSessionID, {
+        wake: false,
+        text: formatChildResult(
           settledDispatch,
           errorBody,
           undefined,
@@ -526,7 +476,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
     }
   }
 
-  async function inspectWorkerResult(sessionID: string) {
+  async function inspectChildResult(sessionID: string) {
     const activeDispatch = activeDispatches.get(sessionID)
     if (!activeDispatch || activeDispatch.inspecting) {
       return
@@ -550,7 +500,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
       const assistantMessages = messages.data
         .filter(isCompletedAssistantMessage)
-        .filter((message) => message.info.id !== activeDispatch.lastWorkerMessageID)
+        .filter((message) => message.info.id !== activeDispatch.lastChildMessageID)
 
       const latest = assistantMessages[assistantMessages.length - 1]
       if (!latest) {
@@ -565,10 +515,10 @@ export const SpinPlugin: Plugin = async (ctx) => {
       const settledDispatch = removeActiveDispatch(sessionID, activeDispatch)
       if (!settledDispatch) return
 
-      if (!settledDispatch.relay) {
-        compactedWorkers.delete(sessionID)
-        if (leadSessions.has(sessionID)) {
-          await checkLeadContext(sessionID)
+      if (!settledDispatch.reportBack) {
+        compactedChildren.delete(sessionID)
+        if (parentSessions.has(sessionID)) {
+          await checkParentContext(sessionID)
         }
         return
       }
@@ -578,39 +528,23 @@ export const SpinPlugin: Plugin = async (ctx) => {
       const latestInfo = latest.info as AssistantMessageInfo
       const sessionSummary = summarizeSessionContent(messages.data)
 
-      const payload = formatWorkerResult(
+      const payload = formatChildResult(
         {
           ...settledDispatch,
           turn: nextTurn,
-          lastWorkerMessageID: latestInfo.id,
+          lastChildMessageID: latestInfo.id,
         },
         latestInfo.error
           ? `${text}\n\nSession error: ${JSON.stringify(latestInfo.error)}`
           : text,
         { tokens: latestInfo.tokens },
         sessionSummary,
-        compactedWorkers.delete(sessionID),
+        compactedChildren.delete(sessionID),
       )
 
-      if (settledDispatch.comm === "sync") {
-        const waiter = syncWaiters.get(sessionID)
-        if (waiter) {
-          syncWaiters.delete(sessionID)
-          waiter.resolve(payload)
-        }
-
-        return
-      }
-
-      const shouldContinue =
-        settledDispatch.comm === "async" &&
-        nextTurn <= settledDispatch.maxTurns
-
-      await relayToLead(settledDispatch.leadSessionID, {
-        noReply: !shouldContinue,
-        text: shouldContinue
-          ? `${payload}\n\nUser is unaware of this message. Decide next step: dispatch again, ask user, or stop.`
-          : `${payload}\n\nUser is unaware of this message. Stopping here.${settledDispatch.comm === "async" ? ` Reached maxTurns=${settledDispatch.maxTurns}.` : ""}`,
+      await relayToParent(settledDispatch.parentSessionID, {
+        wake: true,
+        text: `${payload}\n\nUser is unaware of this message. Decide next step: dispatch again, ask user, or stop.`,
       })
     } catch (error) {
       void failActiveDispatch(
@@ -623,10 +557,10 @@ export const SpinPlugin: Plugin = async (ctx) => {
     }
   }
 
-  // Mirror the worker context notices for lead sessions: on idle,
-  // check the lead's own context size and inject a silent notice when
-  // a threshold is crossed (same crossing semantics as worker notices).
-  async function checkLeadContext(sessionID: string) {
+  // Mirror the child context notices for parent sessions: on idle,
+  // check the parent's own context size and inject a silent notice when
+  // a threshold is crossed (same crossing semantics as child notices).
+  async function checkParentContext(sessionID: string) {
     try {
       const messages = await ctx.client.session.messages({
         path: { id: sessionID },
@@ -649,193 +583,142 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
       const hard = stepped >= 500000
       await sendPrompt(sessionID, {
-        noReply: true,
+        wake: false,
         text: hard
-          ? `System Message. User doesn't see this:\n\nLead limit (user guidance): your session context reached tokens(${stepped / 1000}k) — past the trust boundary; this session is no longer reliable for coordination. Retire now: let in-flight workers finish or interrupt them, and once every worker is idle, write a generous handover file (including reasoning, evidence, decisions, rejected alternatives, open items, worker sessionIds, file paths, and validation results), spin exactly one successor lead session (spin-session with relay: false, e.g. title "[ORCH] successor") referencing that handover file. Then give the user a final summary including the successor sessionID and stop; the successor continues the work.\n\nEnd of System message.`
-          : `System Message. User doesn't see this:\n\nLead notice (user guidance): your session context reached tokens(${stepped / 1000}k); coordination quality degrades at this size and every follow-up pays for retained context. Decide how to finish: either steer the current work to completion without taking on new work or new dispatches, or hand over to a successor lead. Hand over only once every worker is idle — active workers relay results to this session, and handing over mid-dispatch splits control between two leads — unless the user tells you to hand over earlier. Write a generous handover file (reasoning, evidence, decisions, rejected alternatives, open items, worker sessionIds, file paths, validation results), spin exactly one successor session (spin-session with relay: false) referencing that handover file, then tell the user you are handing over (with the successor session link) and stop. Make the handover generous; do not compress it to pointers alone or pasted file contents.\n\nEnd of System message.`,
+          ? `System Message. User doesn't see this:\n\nSession limit (user guidance): your session context reached tokens(${stepped / 1000}k) — past the trust boundary; this session is no longer reliable for coordination. Retire now: let in-flight children finish or interrupt them, and once every child is idle, write a generous handover file (including reasoning, evidence, decisions, rejected alternatives, open items, child sessionIds, file paths, and validation results), spin exactly one successor session (spin-session with reportBack: false, e.g. title "[ORCH] successor") referencing that handover file. Then give the user a final summary including the successor sessionID and stop; the successor continues the work.\n\nEnd of System message.`
+          : `System Message. User doesn't see this:\n\nSession notice (user guidance): your session context reached tokens(${stepped / 1000}k); coordination quality degrades at this size and every follow-up pays for retained context. Decide how to finish: either steer the current work to completion without taking on new work or new dispatches, or hand over to a successor. Hand over only once every child is idle — active children relay results to this session, and handing over mid-dispatch splits control between two parents — unless the user tells you to hand over earlier. Write a generous handover file (reasoning, evidence, decisions, rejected alternatives, open items, child sessionIds, file paths, validation results), spin exactly one successor session (spin-session with reportBack: false) referencing that handover file, then tell the user you are handing over (with the successor session link) and stop. Make the handover generous; do not compress it to pointers alone or pasted file contents.\n\nEnd of System message.`,
       })
     } catch {
       // Best effort - context notices must never break the idle handler
     }
   }
 
-  // Shared dispatch: validates the worker sessionID isn't the lead's
-  // own, registers the dispatch, runs sync/async path, and returns the
-  // standard "Prompt dispatched" message. Used by both spin-session (after it
+  // Shared dispatch: validates the child sessionID isn't the parent's
+  // own, registers the dispatch, and returns the standard
+  // "Prompt dispatched" message. Used by both spin-session (after it
   // creates a session) and spin-talk.
-  const dispatchToWorker = async (
-    workerSessionID: string,
+  const dispatchToChild = async (
+    childSessionID: string,
     args: {
       text: string
       title?: string
       agent?: string
       model?: string
-      comm?: "sync" | "async" | "off"
-      relay?: boolean
+      reportBack?: boolean
+      wake?: boolean
       envelope?: boolean
     },
     toolCtx: { sessionID: string },
   ): Promise<string> => {
-    leadSessions.add(toolCtx.sessionID)
+    parentSessions.add(toolCtx.sessionID)
 
-    if (workerSessionID === toolCtx.sessionID) {
+    if (childSessionID === toolCtx.sessionID) {
       throw new Error("Target sessionID must be different from current session.")
-    }
-
-    if (ceoSessions.has(workerSessionID)) {
-      // CEO sessions are user-driven hubs: deliver the escalation silently and
-      // never wake them. The CEO reads pending reports on its next user turn.
-      if (!args.text) throw new Error("text is required.")
-      const text = args.envelope
-        ? await formatAgentEnvelope(toolCtx.sessionID, args.text)
-        : args.text
-      await deliverToCeo(workerSessionID, {
-        text,
-        agent: args.agent,
-        model: parseModelOverride(args.model),
-      })
-      return `Report delivered silently to CEO session ${workerSessionID}. It will be read when the CEO next runs.`
-    }
-
-    const existingDispatch = activeDispatches.get(workerSessionID)
-    if (
-      existingDispatch &&
-      existingDispatch.leadSessionID !== toolCtx.sessionID
-    ) {
-      throw new Error(
-        `Session ${workerSessionID} is already controlled by another session.`,
-      )
-    }
-
-    if (existingDispatch) {
-      throw new Error(
-        `Session ${workerSessionID} is still busy. Wait for its next relayed result before sending another prompt.`,
-      )
     }
 
     if (!args.text) {
       throw new Error("text is required.")
     }
 
-    abortedWorkers.delete(workerSessionID)
-
-    const relay = args.relay ?? true
+    const text = args.envelope
+      ? await formatAgentEnvelope(toolCtx.sessionID, args.text)
+      : args.text
     const model = parseModelOverride(args.model)
-    const comm = args.comm ?? "async"
-    const maxTurns = 50
+    const wake = args.wake ?? true
 
-    if (!relay && comm === "sync") {
-      throw new Error('relay: false cannot be combined with comm: "sync".')
-    }
-
-    const sessionTitle =
-      args.title ??
-      (await ctx.client.session.get({ path: { id: workerSessionID } })).data.title
-    const workerSlug = sessionTitle.match(/^\[[^\]\r\n]+\]/)?.[0]
-
-    const pendingDispatch: PendingDispatch = {
-      leadSessionID: toolCtx.sessionID,
-      workerSessionID,
-      workerSlug,
-      text: args.text,
-      agent: args.agent,
-      model,
-      comm,
-      maxTurns,
-      relay,
-    }
-
-    if (comm === "sync") {
-      const result = new Promise<string>((resolve, reject) => {
-        syncWaiters.set(workerSessionID, { resolve, reject })
-      })
-
-      const activeDispatch: ActiveDispatch = {
-        ...pendingDispatch,
-        turn: 0,
-        dispatchedAt: Date.now(),
-        deadlineAt: Date.now() + workerResultRetryTimeoutMs,
-      }
-
-      activeDispatches.set(workerSessionID, activeDispatch)
-
-      try {
-        await sendPrompt(workerSessionID, {
-          agent: pendingDispatch.agent,
-          model: pendingDispatch.model,
-          text: pendingDispatch.text,
-        })
-      } catch (error) {
-        activeDispatches.delete(workerSessionID)
-        syncWaiters.delete(workerSessionID)
-
-        const message = error instanceof Error ? error.message : String(error)
-        throw new Error(message)
-      }
-
-      return await result
-    }
-
-    const activeDispatch: ActiveDispatch = {
-      ...pendingDispatch,
-      turn: 0,
-      dispatchedAt: Date.now(),
-      deadlineAt: Date.now() + workerResultRetryTimeoutMs,
-    }
-
-    activeDispatches.set(workerSessionID, activeDispatch)
-
-    if (!pendingDispatch.relay) {
-      // Detached: fire without awaiting the worker's turn. Awaiting
-      // sendPrompt blocks the lead's tool call until idle.
-      // Registration stays so the busy guard and the silent
-      // idle/error settlement keep working.
-      sendPrompt(workerSessionID, {
-        agent: pendingDispatch.agent,
-        model: pendingDispatch.model,
-        text: pendingDispatch.text,
+    const reportBack = args.reportBack ?? true
+    if (!reportBack) {
+      // Detached: fire without awaiting the child's turn and without
+      // registering a dispatch. Awaiting sendPrompt blocks the parent's
+      // tool call until idle.
+      sendPrompt(childSessionID, {
+        agent: args.agent,
+        model,
+        text,
+        wake,
       }).catch((error) => {
-        activeDispatches.delete(workerSessionID)
         const message = error instanceof Error ? error.message : String(error)
         // Nowhere to relay; log best-effort so failures stay visible.
         void ctx.client.app.log({
           body: {
             service: "opencode-spin",
             level: "error",
-            message: `Detached dispatch to ${workerSessionID} failed: ${message}`,
-            extra: { workerSessionID },
+            message: `Detached dispatch to ${childSessionID} failed: ${message}`,
+            extra: { childSessionID },
           },
         }).catch(() => {
           // Silently fail - plugin should not loop on notification errors
         })
       })
 
-      return `Prompt dispatched to detached session. ${formatWorkerTarget(pendingDispatch)}. Results will not be relayed back to this session.`
+      return `Prompt dispatched to detached session ${childSessionID}. Results will not be relayed back to this session.`
     }
 
-    sendPrompt(workerSessionID, {
+    const existingDispatch = activeDispatches.get(childSessionID)
+    if (
+      existingDispatch &&
+      existingDispatch.parentSessionID !== toolCtx.sessionID
+    ) {
+      throw new Error(
+        `Session ${childSessionID} is already controlled by another session.`,
+      )
+    }
+
+    if (existingDispatch) {
+      throw new Error(
+        `Session ${childSessionID} is still busy. Wait for its next relayed result before sending another prompt.`,
+      )
+    }
+
+    abortedChildren.delete(childSessionID)
+
+    const sessionTitle =
+      args.title ??
+      (await ctx.client.session.get({ path: { id: childSessionID } })).data.title
+    const childSlug = sessionTitle.match(/^\[[^\]\r\n]+\]/)?.[0]
+
+    const pendingDispatch: PendingDispatch = {
+      parentSessionID: toolCtx.sessionID,
+      childSessionID,
+      childSlug,
+      text,
+      agent: args.agent,
+      model,
+      reportBack,
+    }
+
+    const activeDispatch: ActiveDispatch = {
+      ...pendingDispatch,
+      turn: 0,
+      dispatchedAt: Date.now(),
+      deadlineAt: Date.now() + childResultRetryTimeoutMs,
+    }
+
+    activeDispatches.set(childSessionID, activeDispatch)
+
+    sendPrompt(childSessionID, {
       agent: pendingDispatch.agent,
       model: pendingDispatch.model,
       text: pendingDispatch.text,
     }).catch(async (error) => {
-      activeDispatches.delete(workerSessionID)
+      activeDispatches.delete(childSessionID)
 
       const message = error instanceof Error ? error.message : String(error)
 
       try {
-        await relayToLead(pendingDispatch.leadSessionID, {
-          noReply: true,
-          text: `Dispatch failed. ${formatWorkerTarget(pendingDispatch)}\n\n${message}\n\nSession: ${pendingDispatch.workerSessionID}.`,
+        await relayToParent(pendingDispatch.parentSessionID, {
+          wake: false,
+          text: `Dispatch failed. ${formatChildTarget(pendingDispatch)}\n\n${message}\n\nSession: ${pendingDispatch.childSessionID}.`,
         })
       } catch {
         // Silently fail - plugin should not loop on notification errors
       }
     })
 
-    return `Prompt dispatched to session. ${formatWorkerTarget(pendingDispatch)}. You will be notified when the step is complete. You can stop now.`
+    return `Prompt dispatched to session. ${formatChildTarget(pendingDispatch)}. You will be notified when the step is complete. You can stop now.`
   }
 
-  const autoArchiveWorkerSessions = false
+  const autoArchiveChildSessions = false
 
   const archiveSession = async (sessionID: string) => {
     try {
@@ -849,18 +732,18 @@ export const SpinPlugin: Plugin = async (ctx) => {
         body: {
           service: "opencode-spin",
           level: "warn",
-          message: `Failed to archive worker session ${sessionID}: ${message}`,
+          message: `Failed to archive child session ${sessionID}: ${message}`,
           extra: { sessionID },
         },
       }).catch(() => {})
     }
   }
 
-  const createWorkerSession = async (title: string | undefined) => {
+  const createChildSession = async (title: string | undefined) => {
     const newSession = await ctx.client.session.create({
       body: title ? { title } : {},
     })
-    if (autoArchiveWorkerSessions) {
+    if (autoArchiveChildSessions) {
       await archiveSession(newSession.data.id)
     }
     return newSession.data.id
@@ -891,7 +774,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       }
     },
 
-    // Hook: Listen for session and worker events
+    // Hook: Listen for session and child events
     event: async ({ event }) => {
       // Early filter: skip events we don't handle
       if (!handledEventTypes.has(event.type)) return
@@ -905,52 +788,35 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
         const sessionID = event.properties.sessionID as string
 
-        // Swallow idle events for an interrupted worker
-        const swallowCount = abortedWorkers.get(sessionID)
+        // Swallow idle events for an interrupted child
+        const swallowCount = abortedChildren.get(sessionID)
         if (swallowCount !== undefined) {
           if (swallowCount <= 1) {
-            abortedWorkers.delete(sessionID)
+            abortedChildren.delete(sessionID)
           } else {
-            abortedWorkers.set(sessionID, swallowCount - 1)
+            abortedChildren.set(sessionID, swallowCount - 1)
           }
           return
         }
 
-        // CEO drain: on a user-driven turn end, deliver reports queued while
-        // the CEO was busy. Deliveries are noReply: true, so they never wake
-        // the CEO into another turn.
-        if (ceoSessions.has(sessionID)) {
-          const queue = ceoQueue.get(sessionID)
-          if (queue && queue.length > 0) {
-            ceoQueue.delete(sessionID)
-            for (const item of queue) {
-              await deliverToCeo(sessionID, item)
-            }
-          }
-        }
-
         if (!activeDispatches.has(sessionID)) {
-          if (leadSessions.has(sessionID)) {
-            await checkLeadContext(sessionID)
+          if (parentSessions.has(sessionID)) {
+            await checkParentContext(sessionID)
           }
           return
         }
 
         const pendingDispatch = activeDispatches.get(sessionID)!
-        if (pendingDispatch.comm === "sync") {
-          await inspectWorkerResult(sessionID)
-          return
-        }
 
         // Deferred idle check: do not block the event loop so a trailing
         // session.error can remove the dispatch or arm the swallow first.
-        // Exactly one silent notice per worker still comes from the error path.
+        // Exactly one silent notice per child still comes from the error path.
         if (!pendingDispatch.inspecting) {
           void (async () => {
-            await new Promise((resolve) => setTimeout(resolve, workerIdleSettleMs))
+            await new Promise((resolve) => setTimeout(resolve, childIdleSettleMs))
             if (activeDispatches.get(sessionID) !== pendingDispatch) return
-            if (abortedWorkers.has(sessionID)) return
-            await inspectWorkerResult(sessionID)
+            if (abortedChildren.has(sessionID)) return
+            await inspectChildResult(sessionID)
           })()
         }
       }
@@ -972,34 +838,27 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
         const activeDispatch = activeDispatches.get(sessionID)!
 
-        // Mark the worker as aborted so the following idle events are ignored
-        abortedWorkers.set(sessionID, abortedWorkersIdleSwallowCount)
+        // Mark the child as aborted so the following idle events are ignored
+        abortedChildren.set(sessionID, abortedChildrenIdleSwallowCount)
         removeActiveDispatch(sessionID, activeDispatch)
 
-        // Clean compaction flag before the sync short-circuit.
-        const wasCompacted = compactedWorkers.delete(sessionID)
+        // Clean compaction flag so a retry on this session isn't falsely notified.
+        const wasCompacted = compactedChildren.delete(sessionID)
 
         const errorLabel = properties.error?.name
           ? `${properties.error.name}${properties.error.data?.message ? `: ${properties.error.data.message}` : ""}`
           : "Unknown session error"
 
-        const waiter = syncWaiters.get(sessionID)
-        if (waiter) {
-          syncWaiters.delete(sessionID)
-          waiter.reject(new Error(errorLabel))
-          return
-        }
-
-        if (!activeDispatch.relay) {
+        if (!activeDispatch.reportBack) {
           return
         }
 
         const errorBody = `Error: ${errorLabel}\n\nThe session has been aborted. Send your next instruction when ready.`
 
         try {
-          await relayToLead(activeDispatch.leadSessionID, {
-            noReply: true,
-            text: formatWorkerResult(
+          await relayToParent(activeDispatch.parentSessionID, {
+            wake: false,
+            text: formatChildResult(
               activeDispatch,
               errorBody,
               undefined,
@@ -1038,33 +897,22 @@ Returns the standard "Prompt dispatched" status. The result is relayed back when
             .string()
             .optional()
             .describe("Human-readable label for the new child session. Prefix with slug in brackets, such as [WRK]."),
-          relay: tool.schema
+          reportBack: tool.schema
             .boolean()
             .optional()
             .describe(
-              "Whether to relay results back to this lead session. Set to false when spawning a successor lead or detached session. Default: true",
+              "Whether to relay results back to this session. Set to false when spawning a successor or detached session. Default: true",
             ),
-          ...(ENABLE_ALL_COMM_MODES
-            ? {
-                comm: tool.schema
-                  .enum(["sync", "async", "off"])
-                  .optional()
-                  .describe(
-                    'Communication mode: "sync" blocks until session goes idle, "async" relays result later, "off" relays result, but you will see it when user allows it. Default: "async"',
-                  ),
-              }
-            : {}),
-          ceo: tool.schema
+          wake: tool.schema
             .boolean()
             .optional()
-            .describe("Enable CEO mode for this session. Session relays are queued while CEO is busy processing a previous relay."),
+            .describe("Whether dispatching wakes the target session into a new turn. Set to false for silent reports that wait for the target's next user turn. Default: true"),
         },
 
         async execute(args, toolCtx) {
           return withErrorToast("Session operation failed", async () => {
-            if (args.ceo) ceoSessions.add(toolCtx.sessionID)
-            const sessionID = await createWorkerSession(args.title)
-            return await dispatchToWorker(sessionID, args, toolCtx)
+            const sessionID = await createChildSession(args.title)
+            return await dispatchToChild(sessionID, args, toolCtx)
           })
         },
       }),
@@ -1093,34 +941,29 @@ Returns the standard "Prompt dispatched" status. The result is relayed back when
             .describe(
               "Optional AGENT SELECTION: only set agent if user asks for it. Available agents: ${agentList}",
             ),
-          ...(ENABLE_ALL_COMM_MODES
-            ? {
-                comm: tool.schema
-                  .enum(["sync", "async", "off"])
-                  .optional()
-                  .describe(
-                    'Communication mode: "sync" blocks until session goes idle, "async" relays result later, "off" relays result, but you will see it when user allows it. Default: "async"',
-                  ),
-              }
-            : {}),
-          ceo: tool.schema
+          reportBack: tool.schema
             .boolean()
             .optional()
-            .describe("Enable CEO mode for this session. Session relays are queued while CEO is busy processing a previous relay."),
+            .describe(
+              "Whether to relay results back to this session. Set to false for detached fire-and-forget dispatches. Default: true",
+            ),
+          wake: tool.schema
+            .boolean()
+            .optional()
+            .describe("Whether dispatching wakes the target session into a new turn. Set to false for silent reports that wait for the target's next user turn. Default: true"),
           envelope: tool.schema
             .boolean()
             .optional()
             .describe(
-              "Wrap this message as an inter-agent lead report (used when escalating to the CEO). Default: false",
+              "Wrap this message as an inter-agent child report (used when escalating to another session). Default: false",
             ),
         },
 
         async execute(args, toolCtx) {
           return withErrorToast("Session operation failed", async () => {
-            if (args.ceo) ceoSessions.add(toolCtx.sessionID)
             const validationError = validateSessionID(args.sessionID)
             if (validationError) throw new Error(validationError)
-            return await dispatchToWorker(args.sessionID, args, toolCtx)
+            return await dispatchToChild(args.sessionID, args, toolCtx)
           })
         },
       }),
@@ -1130,7 +973,7 @@ Returns the standard "Prompt dispatched" status. The result is relayed back when
 
 Runs one prompt asynchronously with agent/model override. The reply arrives as a relay when the child goes idle, so stop and wait for it. While it runs the child is tracked, and concurrent prompts to it are rejected.
 
-Usage: only when the user asks for a box, or when the lead needs a one-shot Scout call without asking the user.
+Usage: only when the user asks for a box, or when a one-shot call is needed without asking the user.
 `,
 
         args: {
@@ -1150,8 +993,8 @@ Usage: only when the user asks for a box, or when the lead needs a one-shot Scou
 
         async execute(args, toolCtx) {
           return withErrorToast("Session operation failed", async () => {
-            const sessionID = await createWorkerSession(args.title)
-            return await dispatchToWorker(sessionID, { ...args, relay: true }, toolCtx)
+            const sessionID = await createChildSession(args.title)
+            return await dispatchToChild(sessionID, { ...args, reportBack: true }, toolCtx)
           })
         },
       }),
@@ -1162,7 +1005,7 @@ Usage: only when the user asks for a box, or when the lead needs a one-shot Scou
 Stops dispatches in progress and removes queued prompts for the session. Requires the actual session ID returned from a previous spin-session or spin-talk call.
 
 - sessionID: child session ID (starts with "ses")
-- Aborts in-progress dispatch (if controlled by this session) and rejects any sync waiter
+- Aborts in-progress dispatch (if controlled by this session)
 - Removes queued prompts for the session across all dispatchers
 - Marks the session so upcoming idle events are swallowed
 
@@ -1184,42 +1027,38 @@ EXAMPLE:
 
         async execute(args, toolCtx) {
           try {
-            const workerSessionID = args.sessionID
+            const childSessionID = args.sessionID
 
-            const validationError = validateSessionID(workerSessionID)
+            const validationError = validateSessionID(childSessionID)
             if (validationError) {
               throw new Error(validationError)
             }
 
-            const activeDispatch = activeDispatches.get(workerSessionID)
+            const activeDispatch = activeDispatches.get(childSessionID)
             if (
               activeDispatch &&
-              activeDispatch.leadSessionID !== toolCtx.sessionID
+              activeDispatch.parentSessionID !== toolCtx.sessionID
             ) {
-              throw new Error(`Session ${workerSessionID} is controlled by another session.`)
+              throw new Error(`Session ${childSessionID} is controlled by another session.`)
             }
 
             if (!activeDispatch) {
-              return `Session ${workerSessionID} has no active dispatch; nothing to interrupt.`
+              return `Session ${childSessionID} has no active dispatch; nothing to interrupt.`
             }
 
-            removeActiveDispatch(workerSessionID, activeDispatch)
-            abortedWorkers.set(workerSessionID, abortedWorkersIdleSwallowCount)
-            // Consume compaction flag before the sync short-circuit, so a retry on
-            // this session isn't falsely notified and the relay can report it.
-            const wasCompacted = compactedWorkers.delete(workerSessionID)
-            await ctx.client.session.abort({ path: { id: workerSessionID } })
+            removeActiveDispatch(childSessionID, activeDispatch)
+            abortedChildren.set(childSessionID, abortedChildrenIdleSwallowCount)
+            // Consume compaction flag so a retry on this session isn't
+            // falsely notified and the relay can report it.
+            const wasCompacted = compactedChildren.delete(childSessionID)
+            await ctx.client.session.abort({ path: { id: childSessionID } })
 
-            const waiter = syncWaiters.get(workerSessionID)
-            if (waiter) {
-              syncWaiters.delete(workerSessionID)
-              waiter.reject(new Error("Session interrupted by dispatcher"))
-            } else if (activeDispatch.relay) {
+            if (activeDispatch.reportBack) {
               const interruptBody = `Session was interrupted.\n\nThe session has been aborted. Send your next instruction when ready.`
               try {
-                await relayToLead(activeDispatch.leadSessionID, {
-                  noReply: true,
-                  text: formatWorkerResult(
+                await relayToParent(activeDispatch.parentSessionID, {
+                  wake: false,
+                  text: formatChildResult(
                     activeDispatch,
                     interruptBody,
                     undefined,
@@ -1233,7 +1072,7 @@ EXAMPLE:
               }
             }
 
-            return `Session ${workerSessionID} interrupted.`
+            return `Session ${childSessionID} interrupted.`
           } catch (error) {
             const message =
               error instanceof Error ? error.message : String(error)
@@ -1253,7 +1092,7 @@ EXAMPLE:
       "spin-id": tool({
         description: `Return this session's own ID.
 
-Use it to learn the session ID you must hand to leads (or any inter-agent recipient) so they can report back to you. Copy the ID verbatim; never invent or abbreviate it.
+Use it to learn the session ID you must hand to another session (for example, a parent giving children the address to report back to). Copy the ID verbatim; never invent or abbreviate it.
 `,
 
         args: {},
@@ -1271,7 +1110,7 @@ Use it to learn the session ID you must hand to leads (or any inter-agent recipi
     ...hooks,
     "experimental.session.compacting": async (input: { sessionID: string }) => {
       if (activeDispatches.has(input.sessionID)) {
-        compactedWorkers.add(input.sessionID)
+        compactedChildren.add(input.sessionID)
       }
     },
   } as any
