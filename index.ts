@@ -955,7 +955,7 @@ Returns the standard "Prompt dispatched" status. The result is relayed back when
             .boolean()
             .optional()
             .describe(
-              "Wrap this message as an inter-agent child report (used when escalating to another session). Default: false",
+              "Wrap this message as an inter-agent child report (used when escalating to parent session). Default: false",
             ),
         },
 
