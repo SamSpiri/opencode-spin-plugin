@@ -835,8 +835,8 @@ export const SpinPlugin: Plugin = async (ctx) => {
     return `Prompt dispatched to worker. ${formatWorkerTarget(pendingDispatch)}. You will be notified when worker step is complete. You can stop now.`
   }
 
-  // Workers are root sessions (no parentID) so the user can open and prompt
-  // them, and are archived so they stay out of the default session list.
+  const autoArchiveWorkerSessions = false
+
   const archiveSession = async (sessionID: string) => {
     try {
       await ctx.client.session.update({
@@ -860,7 +860,9 @@ export const SpinPlugin: Plugin = async (ctx) => {
     const newSession = await ctx.client.session.create({
       body: title ? { title } : {},
     })
-    await archiveSession(newSession.data.id)
+    if (autoArchiveWorkerSessions) {
+      await archiveSession(newSession.data.id)
+    }
     return newSession.data.id
   }
 
