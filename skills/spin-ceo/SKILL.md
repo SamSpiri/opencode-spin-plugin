@@ -52,7 +52,7 @@ Leads escalate via `spin-talk` to your ID: cross-track conflicts, resource gates
 - **Conflict** (two tracks need the same file/instance): decide ownership, tell both leads, update your in-session program state.
 - **Resource or stop-and-confirm gate**: you cannot close it — forward the lead's proposal to the user verbatim in structure (proposal, consequences, rollback), get the answer, relay it back.
 - **Blocker**: supply information from other tracks if you have it; otherwise raise to the user with the track's link.
-- **Terminal outcome**: mark the track done in your in-session program state; start dependent tracks if any.
+- **Terminal outcome**: mark the track done in your in-session program state; start dependent tracks if any. Done means idle, not retired — the lead stays eligible for reuse-first follow-ups.
 
 Never take over a track's technical direction. If a lead is wrong, tell it what you know that it does not, and let it re-plan.
 
