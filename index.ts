@@ -1042,7 +1042,7 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
       "spin-box": tool({
         description: `A boxed agent is a child session the user cannot talk to, unlike spin-session workers, which are user-addressable.
 
-Runs one prompt asynchronously with optional agent/model override. The reply arrives as a relay when the child goes idle, so stop and wait for it. While it runs the child is tracked, and concurrent prompts to it are rejected.
+Runs one prompt asynchronously with agent/model override. The reply arrives as a relay when the child goes idle, so stop and wait for it. While it runs the child is tracked, and concurrent prompts to it are rejected.
 
 Usage: only when the user asks for a box, or when the orchestrator needs a one-shot Scout call without asking the user.
 `,
@@ -1051,8 +1051,7 @@ Usage: only when the user asks for a box, or when the orchestrator needs a one-s
           text: tool.schema.string().describe("The prompt to send"),
           model: tool.schema
             .string()
-            .optional()
-            .describe('Model "provider/model" form, e.g. "github-copilot/gpt-5.4-mini". Omit for the agent default.'),
+            .describe('Model "provider/model" form, e.g. "github-copilot/gpt-5.4-mini". Prefer cheap model.'),
           agent: tool.schema
             .string()
             .optional()
