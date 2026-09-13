@@ -75,6 +75,21 @@ Every time you dispatch to ANY session (`spin-session` or `spin-talk`), immediat
 - NO Markdown links (`[title](url)`), NO full URLs (`https://...` or leading slashes).
 - Do not relay internal lead progress chatter while leads proceed autonomously, but ALWAYS report every dispatch confirmation to the user with the child link.
 
+### Status snapshot shape (gates and terminal outcomes)
+
+Lead with `Where everything stands:` then a two-column `Item | State` table, one row per track or decision. State is `✅` done + evidence (commit, env, link), `🔄` in flight + next step, or `❌` blocked + owner. Short noun phrases, no prose. Example:
+
+```text
+Where everything stands:
+
+| Item | State |
+|---|---|
+| Import trials | ✅ on dev/test @2560 |
+| Placement fix | ✅ `6317a10`, both modes proven |
+| Searchability build | 🔄 in flight |
+| Chat wording | ✅ `3c8d6b4`, build+lint green |
+```
+
 ## Context and retirement
 
 You receive the same 300k/500k notices as any session. You hold all program state in your own context. At 300k, stop starting new tracks. At 500k, once every lead is idle or handed over, spin one successor Head with `reportBack: false` and prompt it directly with the complete state — objective, per-track status, lead and child session IDs, open gates, decisions, and authoritative references — then tell the user and stop. Do not write a handover file. The successor's first action is again to obtain its own session ID from the user and re-announce it to every live lead.
