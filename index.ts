@@ -6,10 +6,11 @@
  * Features:
  * - Spawn worker sessions with initial prompts
  * - Send follow-up prompts to worker sessions
+ * - Run one-shot subagent tasks with model override (spin-task)
  * - Relay worker results back to orchestrator sessions
  * - Multiple worker sessions per orchestrator
  *
- * @version 1.0.0
+ * @version 1.1.0
  * @license MIT
  * @author M. Adel Alhashemi
  * @see https://github.com/malhashemi/opencode-sessions
@@ -631,7 +632,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       text: string
       title?: string
       agent?: string
-      model: string
+      model?: string
       comm?: "sync" | "async" | "off"
       relay?: boolean
     },
@@ -732,17 +733,29 @@ export const SpinPlugin: Plugin = async (ctx) => {
     activeDispatches.set(workerSessionID, activeDispatch)
 
     if (!pendingDispatch.relay) {
-      try {
-        await sendPrompt(workerSessionID, {
-          agent: pendingDispatch.agent,
-          model: pendingDispatch.model,
-          text: pendingDispatch.text,
-        })
-      } catch (error) {
+      // Detached: fire without awaiting the worker's turn. Awaiting
+      // sendPrompt blocks the orchestrator's tool call until idle.
+      // Registration stays so the busy guard and the silent
+      // idle/error settlement keep working.
+      sendPrompt(workerSessionID, {
+        agent: pendingDispatch.agent,
+        model: pendingDispatch.model,
+        text: pendingDispatch.text,
+      }).catch((error) => {
         activeDispatches.delete(workerSessionID)
         const message = error instanceof Error ? error.message : String(error)
-        throw new Error(message)
-      }
+        // Nowhere to relay; log best-effort so failures stay visible.
+        void ctx.client.app.log({
+          body: {
+            service: "opencode-spin",
+            level: "error",
+            message: `Detached dispatch to ${workerSessionID} failed: ${message}`,
+            extra: { workerSessionID },
+          },
+        }).catch(() => {
+          // Silently fail - plugin should not loop on notification errors
+        })
+      })
 
       return `Prompt dispatched to detached session. ${formatWorkerTarget(pendingDispatch)}. Results will not be relayed back to this session.`
     }
@@ -1022,6 +1035,45 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
             const validationError = validateSessionID(args.sessionID)
             if (validationError) throw new Error(validationError)
             return await dispatchToWorker(args.sessionID, args, toolCtx)
+          })
+        },
+      }),
+
+      "spin-task": tool({
+        description: `Run a one-shot subagent task; the reply is relayed back, not returned inline.
+
+Same as the native task tool, plus agent/model override: spawns a child session (parent is this session), sends one prompt, and returns immediately. The reply arrives as a relay when the child goes idle, so stop and wait for it.
+
+The child stays tracked while it runs, so a concurrent spin-talk to it is rejected instead of silently appending a turn. Find the child later via its parent session ID.
+
+Note: bypasses the native task permission gate; orchestrator-only.
+`,
+
+        args: {
+          text: tool.schema.string().describe("The prompt to send"),
+          model: tool.schema
+            .string()
+            .optional()
+            .describe('Model "provider/model" form, e.g. "github-copilot/gpt-5.4-mini". Omit for the agent default.'),
+          agent: tool.schema
+            .string()
+            .optional()
+            .describe("Optional AGENT SELECTION: only set agent if user asks for it. Available agents: ${agentList}"),
+          title: tool.schema
+            .string()
+            .optional()
+            .describe("Human-readable label for the child session."),
+        },
+
+        async execute(args, toolCtx) {
+          return withErrorToast("Session operation failed", async () => {
+            const newSession = await ctx.client.session.create({
+              body: {
+                parentID: toolCtx.sessionID,
+                ...(args.title ? { title: args.title } : {}),
+              },
+            })
+            return await dispatchToWorker(newSession.data.id, { ...args, relay: true }, toolCtx)
           })
         },
       }),
