@@ -13,7 +13,8 @@ Call `spin-id` immediately to obtain your session ID. If that tool is unavailabl
 
 ## Tracks
 
-- Split the program into tracks that touch disjoint files, instances, and data. A track is the unit of one lead. Sequential dependencies are a single track, never two.
+- Reuse-first, warm context over clean scope. Before spinning a new lead, check all live and terminal leads for overlapping files, area, or issue class. On match, `spin-talk` the originating lead with expanded scope — even if terminal/idle. Scope creep is accepted. Spin new only when no prior lead has relevant context, the lead is dead, or reuse causes a real conflict. When reuse carries new rights, restate authorization explicitly in the follow-up.
+- Split genuinely new work into tracks that touch disjoint files, instances, and data. A track is the unit of one lead. Sequential dependencies are a single track, never two.
 - Hold the program plan in-session — objective, tracks (scope, authoritative task refs, constraints, acceptance), shared resources and who owns each, gates you retain — and keep it current as tracks finish or change. Do not write plan or handover files; pass track details and references directly to each lead.
 - One lead per track, spun with `spin-session` and `relay: false`. Every follow-up to a lead uses `spin-talk` with `relay: false`. Pass the cheap model (named in global `AGENTS.md`) unless the track needs a stronger one, and say so in the lead prompt. On your first dispatch, pass `ceo: true` so the plugin registers this session as the program hub. Lead results do not relay automatically; they reach you only by escalating to your session ID.
 - You may also spin a worker directly (`spin-session` with default relay) for a small self-contained task that does not deserve a lead — a lookup, a report, a one-file fix. This is the only CEO dispatch that relays. Gate it yourself: no change before review, and escalate production-affecting actions to the user.
