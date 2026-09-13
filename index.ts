@@ -625,7 +625,9 @@ export const SpinPlugin: Plugin = async (ctx) => {
     const model = parseModelOverride(args.model)
     const wake = args.wake ?? true
 
-    const reportBack = args.reportBack ?? true
+    // wake:false implies reportBack:false: a silent report never wakes its
+    // target, so there is no turn to relay back.
+    const reportBack = wake ? (args.reportBack ?? true) : false
     if (!reportBack) {
       // Detached: fire without awaiting the child's turn and without
       // registering a dispatch. Awaiting sendPrompt blocks the parent's
@@ -900,12 +902,12 @@ Returns the standard "Prompt dispatched" status. The result is relayed back when
             .boolean()
             .optional()
             .describe(
-              "Whether to relay results back to this session. Set to false when spawning a successor or detached session. Default: true",
+              "Whether to relay results back to this session. Set to false when spawning a successor or detached session. Default: true (forced false when wake is false)",
             ),
           wake: tool.schema
             .boolean()
             .optional()
-            .describe("Whether dispatching wakes the target session into a new turn. Set to false for silent reports that wait for the target's next user turn. Default: true"),
+            .describe("Whether dispatching wakes the target session into a new turn. Set to false for silent reports that wait for the target's next user turn; implies reportBack false. Default: true"),
         },
 
         async execute(args, toolCtx) {
@@ -944,12 +946,12 @@ Returns the standard "Prompt dispatched" status. The result is relayed back when
             .boolean()
             .optional()
             .describe(
-              "Whether to relay results back to this session. Set to false for detached fire-and-forget dispatches. Default: true",
+              "Whether to relay results back to this session. Set to false for detached fire-and-forget dispatches. Default: true (forced false when wake is false)",
             ),
           wake: tool.schema
             .boolean()
             .optional()
-            .describe("Whether dispatching wakes the target session into a new turn. Set to false for silent reports that wait for the target's next user turn. Default: true"),
+            .describe("Whether dispatching wakes the target session into a new turn. Set to false for silent reports that wait for the target's next user turn; implies reportBack false. Default: true"),
           envelope: tool.schema
             .boolean()
             .optional()

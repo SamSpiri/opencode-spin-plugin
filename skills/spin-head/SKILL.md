@@ -23,13 +23,13 @@ Call `spin-id` immediately to obtain your session ID. If that tool is unavailabl
 
 Each lead must see only its own self-contained task. Never mention "tracks", track letters/numbers, other workstreams, or overall program scope to a lead. Oversharing confuses the lead and leaks down to children. Frame the prompt purely around what this lead is directly responsible for.
 
-Every lead prompt MUST contain these lines, filled in, in this exact order, with an explicit newline separating `spin <task/objective>` from the rest. The opening line MUST be `spin <task/objective>` on its own line to unambiguously trigger the `spin-lead` skill, and the literal lines `Head session ID: <ses_...>` and `Report to this session using spin-talk with envelope: true, wake: false, reportBack: false, not to the user.` are mandatory and copied verbatim (with your real ID):
+Every lead prompt MUST contain these lines, filled in, in this exact order, with an explicit newline separating `spin <task/objective>` from the rest. The opening line MUST be `spin <task/objective>` on its own line to unambiguously trigger the `spin-lead` skill, and the literal lines `Head session ID: <ses_...>` and `Report to this session using spin-talk with envelope: true, wake: false, not to the user.` are mandatory and copied verbatim (with your real ID):
 
 ```text
 spin <task/objective>
 <any of: detailed task description, constraints, references, and success criteria for this lead, etc...>
 Head session ID: <ses_...>
-Report to this session using spin-talk with envelope: true, wake: false, reportBack: false, not to the user.
+Report to this session using spin-talk with envelope: true, wake: false, not to the user.
 ```
 
 Keep the objective outcome-focused and concise. Do NOT over-instruct or dictate child actions (e.g. do not tell the lead to "launch a child that waits briefly..." — the lead decides its own child steps). Never prescribe solution shape, child instructions, file sequences, or program context. The `spin` verb tells the lead to run its own child loop instead of doing the technical work itself.
@@ -39,7 +39,7 @@ Before every dispatch, verify the prompt:
 2. Contains your literal `Head session ID: <ses_...>` line.
 If either is missing, do not dispatch; halt and fix it first. A lead dispatched without the opening `spin ` line may fail to load its skill, and a lead without the Head ID cannot report back.
 
-Vocabulary rule: `spin` is the one orchestration word you may use, and only as the verb in `spin <task/objective>`. The literal lines `spin-talk`, `envelope: true`, `wake: false`, `reportBack: false`, and `Head session ID` are required in the lead prompt. Outside those:
+Vocabulary rule: `spin` is the one orchestration word you may use, and only as the verb in `spin <task/objective>`. The literal lines `spin-talk`, `envelope: true`, `wake: false`, and `Head session ID` are required in the lead prompt. Outside those:
 - Never use the word "track" or reference other tracks/workstreams when talking to a lead.
 - Never use tool names or role names (Scout, Judge).
 - Do not micro-manage or tell the lead how many children to launch or how they should execute.

@@ -141,7 +141,7 @@ The bundled `spin-lead` skill defines these orchestration mechanics; `spin-worke
 
 ### Head hub mode
 
-A Head session coordinates several leads. Leads spun with `reportBack: false` escalate to the Head session ID when they have a decision-worthy outcome or blocker. Escalations use `spin-talk` with `envelope: true`, `wake: false`, `reportBack: false`: the plugin never wakes a Head on its own, so only user input starts a Head turn. The Head reads pending reports at the start of its next user turn.
+A Head session coordinates several leads. Leads spun with `reportBack: false` escalate to the Head session ID when they have a decision-worthy outcome or blocker. Escalations use `spin-talk` with `envelope: true`, `wake: false`: the plugin never wakes a Head on its own, so only user input starts a Head turn. The Head reads pending reports at the start of its next user turn.
 
 ### Async relays and turns
 
