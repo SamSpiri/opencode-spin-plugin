@@ -6,7 +6,7 @@
  * Features:
  * - Spawn worker sessions with initial prompts
  * - Send follow-up prompts to worker sessions
- * - Run one-shot subagent tasks with model override (spin-task)
+ * - Run one-shot boxed child sessions with model override (spin-box)
  * - Relay worker results back to orchestrator sessions
  * - Multiple worker sessions per orchestrator
  *
@@ -1039,14 +1039,12 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
         },
       }),
 
-      "spin-task": tool({
-        description: `Run a one-shot subagent task; the reply is relayed back, not returned inline.
+      "spin-box": tool({
+        description: `A boxed agent is a child session the user cannot talk to, unlike spin-session workers, which are user-addressable.
 
-Same as the native task tool, plus agent/model override: spawns a child session (parent is this session), sends one prompt, and returns immediately. The reply arrives as a relay when the child goes idle, so stop and wait for it.
+Runs one prompt asynchronously with optional agent/model override. The reply arrives as a relay when the child goes idle, so stop and wait for it. While it runs the child is tracked, and concurrent prompts to it are rejected.
 
-The child stays tracked while it runs, so a concurrent spin-talk to it is rejected instead of silently appending a turn. Find the child later via its parent session ID.
-
-Note: bypasses the native task permission gate; orchestrator-only.
+Usage: only when the user asks for a box, or when the orchestrator needs a one-shot Scout call without asking the user.
 `,
 
         args: {

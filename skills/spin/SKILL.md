@@ -58,6 +58,7 @@ If Judge requests evidence, route only that request to Scout without adding a co
 
 - `spin-session` — Create a new worker and dispatch the first prompt.
 - `spin-talk` — Send follow-ups to an existing worker.
+- `spin-box` — Spawn a boxed child session the user cannot talk to; use only when the user asks for a box, or for a one-shot Scout call (no permission needed).
 - `spin-interrupt` — Stop a busy worker's current turn. The session survives and stays addressable: follow up with `spin-talk` immediately; only the interrupted turn's own completion is discarded, not the worker.
 
 Use `spin-session` exactly once per worker. Use `spin-talk` for every later step with that worker's `sessionId`.
