@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Install spin.js plugin + spin-lead, spin-ceo, spin-worker, spin-rnd and
+ * Install spin.js plugin + spin-lead, spin-head, spin-worker, spin-rnd and
  * spin-ops skills into opencode's default directories so they're auto-discovered
  * (no opencode.json plugin entry needed).
  *
@@ -15,8 +15,8 @@ import { homedir } from "node:os"
 
 const OC_DIR = join(homedir(), ".config/opencode")
 const PLUGIN_DIR = join(OC_DIR, "plugins")
-// Skill directories replaced by the spin-lead/spin-ceo rename, plus the older knr skill.
-const LEGACY_SKILLS = ["knr", "spin", "ceo"]
+// Skill directories replaced by the spin-lead/spin-head rename, plus the older knr skill.
+const LEGACY_SKILLS = ["knr", "spin", "ceo", "spin-ceo"]
 async function installSkill(name) {
   const dir = join(OC_DIR, `skills/${name}`)
   await mkdir(dir, { recursive: true })
@@ -32,7 +32,7 @@ async function main() {
   console.log(`plugin  -> ${join(PLUGIN_DIR, "spin.js")}`)
 
   // 2. skills (frontmatter + docs body, single source of truth = docs file)
-  for (const name of ["spin-lead", "spin-ceo", "spin-worker", "spin-rnd", "spin-ops"]) {
+  for (const name of ["spin-lead", "spin-head", "spin-worker", "spin-rnd", "spin-ops"]) {
     await installSkill(name)
   }
 

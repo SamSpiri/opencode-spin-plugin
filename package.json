@@ -1,7 +1,7 @@
 {
   "name": "opencode-spin",
   "version": "1.0.0",
-  "description": "Worker session orchestration plugin for OpenCode with multi-agent collaboration support",
+  "description": "Child session orchestration plugin for OpenCode with multi-agent collaboration support",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "type": "module",
