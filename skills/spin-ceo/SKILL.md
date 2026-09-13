@@ -15,8 +15,8 @@ Call `spin-id` immediately to obtain your session ID. If that tool is unavailabl
 
 - Split the program into tracks that touch disjoint files, instances, and data. A track is the unit of one lead. Sequential dependencies are a single track, never two.
 - Hold the program plan in-session — objective, tracks (scope, authoritative task refs, constraints, acceptance), shared resources and who owns each, gates you retain — and keep it current as tracks finish or change. Do not write plan or handover files; pass track details and references directly to each lead.
-- One lead per track, spun with `spin-session` and `relay: false`. Pass the cheap model (named in global `AGENTS.md`) unless the track needs a stronger one, and say so in the lead prompt. On your first dispatch, pass `ceo: true` so the plugin registers this session as the program hub. Lead results do not relay automatically; they reach you only by escalating to your session ID.
-- You may also spin a worker directly (`spin-session` with relay) for a small self-contained task that does not deserve a lead — a lookup, a report, a one-file fix. Gate it yourself: no change before review, and escalate production-affecting actions to the user.
+- One lead per track, spun with `spin-session` and `relay: false`. Every follow-up to a lead uses `spin-talk` with `relay: false`. Pass the cheap model (named in global `AGENTS.md`) unless the track needs a stronger one, and say so in the lead prompt. On your first dispatch, pass `ceo: true` so the plugin registers this session as the program hub. Lead results do not relay automatically; they reach you only by escalating to your session ID.
+- You may also spin a worker directly (`spin-session` with default relay) for a small self-contained task that does not deserve a lead — a lookup, a report, a one-file fix. This is the only CEO dispatch that relays. Gate it yourself: no change before review, and escalate production-affecting actions to the user.
 
 ## Lead prompt contract
 
@@ -59,7 +59,7 @@ Never take over a track's technical direction. If a lead is wrong, tell it what 
 
 - Leads escalate only when every worker is idle and they have a decision-worthy outcome or blocker; expect no progress chatter.
 - Reports from leads and workers reach you silently. You are never woken by a background report: only the user starts your turn. At the start of every user turn, read all pending messages before acting; never assume an empty turn.
-- For each pending escalation: decide, relay the answer back to the originating lead, and update your in-session program state. You do not run the lead's technical loop.
+- For each pending escalation: decide, relay the answer back to the originating lead via `spin-talk` with `relay: false`, and update your in-session program state. You do not run the lead's technical loop.
 - When you dispatch to a session (`spin-session` or `spin-talk`), confirm the dispatch to the user in the same turn with the HTML link to the child session.
 - Outside of dispatch confirmations, you report to the user only at gates, cross-track decisions, and the program's terminal state.
 
