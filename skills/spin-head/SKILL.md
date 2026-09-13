@@ -39,7 +39,7 @@ Before every dispatch, verify the prompt:
 2. Contains your literal `Head session ID: <ses_...>` line.
 If either is missing, do not dispatch; halt and fix it first. A lead dispatched without the opening `spin ` line may fail to load its skill, and a lead without the Head ID cannot report back.
 
-Vocabulary rule: `spin` is the one orchestration word you may use, and only as the verb in `spin <task/objective>`. The literal lines `spin-talk`, `envelope: true`, and `Head session ID` are required in the lead prompt. Outside those:
+Vocabulary rule: `spin` is the one orchestration word you may use, and only as the verb in `spin <task/objective>`. The literal lines `spin-talk`, `envelope: true`, `wake: false`, `reportBack: false`, and `Head session ID` are required in the lead prompt. Outside those:
 - Never use the word "track" or reference other tracks/workstreams when talking to a lead.
 - Never use tool names or role names (Scout, Judge).
 - Do not micro-manage or tell the lead how many children to launch or how they should execute.
