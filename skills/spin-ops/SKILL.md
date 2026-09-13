@@ -1,6 +1,6 @@
 ---
 name: spin-ops
-description: Operations workflow. Load if you are "Spin" lead. Load only if the "spin" skill is loaded.
+description: Operations workflow. Load if you are "Spin" lead. Load only if the `spin-lead` skill is loaded.
 ---
 
 ## Workflow

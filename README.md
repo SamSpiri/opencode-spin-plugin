@@ -5,7 +5,7 @@
 
 > Orchestrate OpenCode worker sessions across models, agents, and parallel tasks.
 
-Spin gives an OpenCode lead three focused tools for creating workers, continuing them, and stopping them. Worker results are relayed back to the lead, so a workflow can move from research to review to implementation without losing the worker session.
+Spin gives an OpenCode lead a focused toolset for creating workers, continuing them, stopping them, and launching boxed child tasks. Worker results are relayed back to the lead, so a workflow can move from research to review to implementation without losing the worker session.
 
 ## Why Spin
 
@@ -28,7 +28,7 @@ The primary installation path is OpenCode's npm plugin configuration:
 }
 ```
 
-Add this to `opencode.json` in a project or to `~/.config/opencode/opencode.json`, then restart OpenCode. OpenCode installs npm plugins at startup. Spin automatically exposes its bundled `Spin`, `spin-rnd`, `spin-ops`, and `Pall` skills through the plugin; no separate skill installation is required.
+Add this to `opencode.json` in a project or to `~/.config/opencode/opencode.json`, then restart OpenCode. OpenCode installs npm plugins at startup. Spin automatically exposes its bundled `spin-lead`, `spin-ceo`, `spin-worker`, `spin-rnd`, and `spin-ops` skills through the plugin; no separate skill installation is required.
 
 ### Pin a version
 
@@ -52,9 +52,9 @@ npm run install:opencode
 The installer is repository-root based and must be run from the clone. It:
 
 - copies the built plugin to `~/.config/opencode/plugins/spin.js`;
-- copies `skills/{spin,spin-rnd,spin-ops,pall}/SKILL.md` to global OpenCode skill directories;
+- copies `skills/{spin-lead,spin-ceo,spin-worker,spin-rnd,spin-ops}/SKILL.md` to global OpenCode skill directories;
 - adds runtime dependencies to `~/.config/opencode/package.json` when absent;
-- removes matching legacy `kanrisha`/`knr` plugin entries and files to prevent duplicate instances;
+- removes matching legacy `kanrisha`/`knr` plugin entries and files, plus the renamed `spin`/`ceo` skill directories, to prevent duplicate instances;
 - removes the legacy `~/.config/opencode/skills/knr` directory.
 
 These are global configuration and filesystem changes. Review them before running the command, and restart OpenCode afterward. Do not combine this local plugin copy with an npm plugin entry for Spin: duplicate instances split in-memory dispatch state.
@@ -104,6 +104,17 @@ spin-talk({
 
 Only one active dispatch may control a worker at a time, and a worker cannot be controlled by two lead sessions simultaneously.
 
+### `spin-box`
+
+Spawns a detached one-shot worker session and dispatches one prompt to it. The session is hidden from the default session list but remains openable and promptable by the user via its session link. Use it when the user asks for a box, or when the lead needs a one-shot Scout call.
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `text` | Yes | Prompt for the child |
+| `model` | Yes | Model in `provider/model` form |
+| `agent` | No | Optional agent override |
+| `title` | No | Child session title |
+
 ### `spin-interrupt`
 
 Aborts an active worker dispatch:
@@ -125,7 +136,11 @@ Use a cheap model for exploration, a stronger model for review, and switch back 
 
 Each worker has its own context. Start separate `spin-session` calls for genuinely parallel work, then continue each with its own `sessionID`.
 
-The bundled `spin` skill defines these orchestration mechanics; `spin-worker` defines the Scout/Judge role discipline that each worker session loads on the lead's request; `spin-rnd` provides the Scout-Judge development loop and `spin-ops` the direct operations workflow where Judge is dispatched only when the judge floor applies; `ceo` sits above leads and runs a program of independent tracks, one lead each.
+The bundled `spin-lead` skill defines these orchestration mechanics; `spin-worker` defines the Scout/Judge role discipline that each worker session loads on the lead's request; `spin-rnd` provides the Scout-Judge development loop and `spin-ops` the direct operations workflow where Judge is dispatched only when the judge floor applies; `spin-ceo` sits above leads and runs a program of independent tracks, one lead each.
+
+### CEO hub mode
+
+A CEO session coordinates several leads. Mark it with `ceo: true` on its first dispatch. Leads spun with `relay: false` escalate to the CEO session ID when they have a decision-worthy outcome or blocker. Every report to a CEO is delivered with `noReply: true`: the plugin never wakes a CEO on its own, so only user input starts a CEO turn. The CEO reads pending reports at the start of its next user turn.
 
 ### Async relays and turns
 

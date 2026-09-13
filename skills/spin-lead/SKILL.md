@@ -1,5 +1,5 @@
 ---
-name: spin
+name: spin-lead
 description: Load only when user tells you to. If the user says "spin <something>", with intention that you would apply some instructions to something.
 ---
 
@@ -22,7 +22,7 @@ Load the matching sub-skill once the task is understood. Load both when the task
 
 ## Roles
 
-Two roles alternate in one shared worker session: **Scout** (cheap model) investigates, forms an evidence-backed direction, implements after approval, and validates; **Judge** (smart model) challenges the direction at a turning point and decides what happens next. Full role definitions and output discipline live in **spin-worker**. Load it once yourself so you understand the worker contract. Ask a worker to load only `spin-worker`, and only on the first dispatch of a new session — boot, rotations, and successors via `spin-session`. The lead may load workflow skills; the worker does not. Role switches via `spin-talk` never re-request the skill because both roles share the session.
+Two roles alternate in one shared worker session: **Scout** (cheap model) investigates, forms an evidence-backed direction, implements after approval, and validates; **Judge** (smart model) challenges the direction at a turning point and decides what happens next. Full role definitions and output discipline live in **spin-worker**. Load it once yourself so you understand the worker contract. Ask a worker to load only `spin-worker`, and only on the first dispatch of a new session — boot, rotations, and successors via `spin-session`. The lead may load workflow skills; the worker does not. Role switches via `spin-talk` never re-request the skill because both roles share the session. Never expose the CEO session ID or program-level terminology to a worker; workers cannot see the program layer.
 
 Tell the worker its current role in natural language; do not repeat context already in the session. After the initial dispatch, prompts should normally contain only the role and routing instruction: investigate without changes, gather Judge's requested fact, reflect on what may be wrong, execute the approved direction, or review the result.
 
@@ -58,10 +58,10 @@ If Judge requests evidence, route only that request to Scout without adding a co
 
 - `spin-session` — Create a new worker and dispatch the first prompt.
 - `spin-talk` — Send follow-ups to an existing worker.
-- `spin-box` — Spawn a boxed child session the user cannot talk to; use only when the user asks for a box, or for a one-shot Scout call (no permission needed).
+- `spin-box` — Spawn a detached one-shot worker session, hidden from the default session list but openable and promptable via its session link; use only when the user asks for a box, or for a one-shot Scout call (no permission needed).
 - `spin-interrupt` — Stop a busy worker's current turn. The session survives and stays addressable: follow up with `spin-talk`.
 
-Use `spin-session` exactly once per worker. Use `spin-talk` for every later step with that worker's `sessionId`.
+Use `spin-session` exactly once per worker. Use `spin-talk` for every later step with that worker's `sessionId`. Never send `spin-talk` to a busy worker: a worker is busy until its relay arrives. Wait for the relay, or call `spin-interrupt` and wait for the interrupt to settle, before dispatching a new prompt.
 
 ## Report budget
 
@@ -107,6 +107,6 @@ Every message to the user that names a worker or successor session MUST contain 
 - Empty worker relay (`[Worker produced no text output]` or empty text): retry once via `spin-talk` to the same session with the same role and same `model`, stating only that an unexpected interruption occurred and ordering continuation of the in-progress work. If empty again, dispatch Judge (same session, smart model) to assess direction from session context. If Judge cannot recover, enter the fixed rotation handover; if handover also fails, stop and report to the user with the worker link.
 - When a written task or handover exists, the initial prompt contains its reference, the Scout role, and only constraints or corrections absent from that artifact. When none exists, provide a concise outcome-oriented description: objective, constraints, acceptance criteria, and useful starting points. Never reproduce source text, prescribe architecture or file sequence, or provide a detailed inspection checklist. During the technical loop, keep prompts organizational and do not re-transfer shared context.
 - Treat worker reports as control signals. Extract only what is needed to route the next turn; do not copy, summarize, or discuss their technical content. Do not relay intermediate reports to the user while the tandem can continue autonomously. Surface only a required user decision or resource gate, a terminal outcome, or a blocker the tandem cannot resolve. Exception — when you are the designated gate (a Judge-free session the user asked you to gate, or a user gate you must formulate): read the evidence as deeply as the decision needs; the no-engagement rule applies only when a Judge turn follows.
-- If your first prompt names a CEO session ID, you report to that session instead of the user: escalate via `spin-talk` to the CEO ID for cross-track conflicts (shared files, shared instances), resource gates, blockers you cannot resolve, and your terminal outcome. Without a CEO ID, the user is your gate.
+- If your first prompt names a CEO session ID, you report to that session instead of the user. Escalate via `spin-talk` only when every worker is idle and you have a decision-worthy outcome or blocker: cross-track conflicts (shared files, shared instances), resource gates, blockers you cannot resolve, or your terminal outcome. Reports to the CEO are delivered silently; the CEO reads them when the user next wakes it, so do not wait for a reply in the same turn. Without a CEO ID, the user is your gate. Never send the CEO session ID or CEO terminology to a worker.
 - Relay relevant user requests, priorities, and decisions because those messages are not visible to the worker. Otherwise intervene technically only when you have material information unavailable to the worker that changes direction, resolves a blocker, or invalidates an assumption; provide that information and its consequence without taking over the direction.
 - A `spin-session` prompt is self-contained through either an authoritative artifact reference or, only when none exists, a concise task description. If the project is large, provide a starting location without summarizing its contents. New workers cannot see lead or user conversations, so relay only unrecorded user constraints and corrections. For handovers, point to the file; never duplicate it in the prompt.

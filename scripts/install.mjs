@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Install spin.js plugin + Spin, spin-worker, spin-rnd, spin-ops, ceo and Pall
- * skills into opencode's default directories so they're auto-discovered (no
- * opencode.json plugin entry needed).
+ * Install spin.js plugin + spin-lead, spin-ceo, spin-worker, spin-rnd and
+ * spin-ops skills into opencode's default directories so they're auto-discovered
+ * (no opencode.json plugin entry needed).
  *
  * Run via: npm run install:opencode
  *
@@ -15,6 +15,8 @@ import { homedir } from "node:os"
 
 const OC_DIR = join(homedir(), ".config/opencode")
 const PLUGIN_DIR = join(OC_DIR, "plugins")
+// Skill directories replaced by the spin-lead/spin-ceo rename, plus the older knr skill.
+const LEGACY_SKILLS = ["knr", "spin", "ceo"]
 async function installSkill(name) {
   const dir = join(OC_DIR, `skills/${name}`)
   await mkdir(dir, { recursive: true })
@@ -30,7 +32,7 @@ async function main() {
   console.log(`plugin  -> ${join(PLUGIN_DIR, "spin.js")}`)
 
   // 2. skills (frontmatter + docs body, single source of truth = docs file)
-  for (const name of ["spin", "spin-worker", "spin-rnd", "spin-ops", "ceo"]) {
+  for (const name of ["spin-lead", "spin-ceo", "spin-worker", "spin-rnd", "spin-ops"]) {
     await installSkill(name)
   }
 
@@ -83,11 +85,14 @@ async function main() {
       if (e.code !== "ENOENT") throw e
     }
   }
-  try {
-    await rm(join(OC_DIR, "skills/knr"), { recursive: true, force: true })
-    console.log(`stale   -> removed ${join(OC_DIR, "skills/knr")}`)
-  } catch (e) {
-    if (e.code !== "ENOENT") throw e
+  // Remove renamed legacy skills so old and new copies do not load side by side.
+  for (const name of LEGACY_SKILLS) {
+    try {
+      await rm(join(OC_DIR, `skills/${name}`), { recursive: true, force: true })
+      console.log(`stale   -> removed ${join(OC_DIR, `skills/${name}`)}`)
+    } catch (e) {
+      if (e.code !== "ENOENT") throw e
+    }
   }
 
   console.log("\ndone. restart opencode to load plugin + skill from default dirs.")

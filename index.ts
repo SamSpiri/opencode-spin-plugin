@@ -237,10 +237,35 @@ export const SpinPlugin: Plugin = async (ctx) => {
   // Sessions that compacted since their current dispatch started.
   const compactedWorkers = new Set<string>()
 
-  // CEO mode: sessions opted in, busy state, and queued relays
+  // CEO mode: sessions opted in, plus silent reports waiting for a busy CEO.
+  // CEO sessions are user-driven: the plugin never wakes them. Every report
+  // to a CEO is delivered with noReply: true; only user input starts a turn.
   const ceoSessions = new Set<string>()
-  const ceoBusy = new Set<string>()
-  const ceoQueue = new Map<string, Array<{ text: string; noReply: boolean }>>()
+  const ceoQueue = new Map<
+    string,
+    Array<{ text: string; agent?: string; model?: ModelOverride }>
+  >()
+
+  function queueCeoReport(
+    sessionID: string,
+    item: { text: string; agent?: string; model?: ModelOverride },
+  ) {
+    const queued = ceoQueue.get(sessionID)
+    if (queued) queued.push(item)
+    else ceoQueue.set(sessionID, [item])
+  }
+
+  async function deliverToCeo(
+    sessionID: string,
+    item: { text: string; agent?: string; model?: ModelOverride },
+  ) {
+    try {
+      await sendPrompt(sessionID, { ...item, noReply: true })
+    } catch {
+      // Session busy; keep the report for the next idle drain.
+      queueCeoReport(sessionID, item)
+    }
+  }
 
   // Sessions that dispatched at least once (leads). Their own context
   // size is checked on idle.
@@ -316,16 +341,9 @@ export const SpinPlugin: Plugin = async (ctx) => {
     options: { text: string; noReply: boolean },
   ) {
     if (ceoSessions.has(leadSessionID)) {
-      if (ceoBusy.has(leadSessionID)) {
-        const queue = ceoQueue.get(leadSessionID)
-        if (queue) {
-          queue.push(options)
-        } else {
-          ceoQueue.set(leadSessionID, [options])
-        }
-        return
-      }
-      ceoBusy.add(leadSessionID)
+      // CEO sessions are user-driven: deliver silently, never wake them.
+      await deliverToCeo(leadSessionID, { text: options.text })
+      return
     }
     await sendPrompt(leadSessionID, options)
   }
@@ -644,6 +662,18 @@ export const SpinPlugin: Plugin = async (ctx) => {
       throw new Error("worker sessionID must be different from current session.")
     }
 
+    if (ceoSessions.has(workerSessionID)) {
+      // CEO sessions are user-driven hubs: deliver the escalation silently and
+      // never wake them. The CEO reads pending reports on its next user turn.
+      if (!args.text) throw new Error("text is required.")
+      await deliverToCeo(workerSessionID, {
+        text: args.text,
+        agent: args.agent,
+        model: parseModelOverride(args.model),
+      })
+      return `Report delivered silently to CEO session ${workerSessionID}. It will be read when the CEO next runs.`
+    }
+
     const existingDispatch = activeDispatches.get(workerSessionID)
     if (
       existingDispatch &&
@@ -782,6 +812,35 @@ export const SpinPlugin: Plugin = async (ctx) => {
     return `Prompt dispatched to worker. ${formatWorkerTarget(pendingDispatch)}. You will be notified when worker step is complete. You can stop now.`
   }
 
+  // Workers are root sessions (no parentID) so the user can open and prompt
+  // them, and are archived so they stay out of the default session list.
+  const archiveSession = async (sessionID: string) => {
+    try {
+      await ctx.client.session.update({
+        path: { id: sessionID },
+        body: { time: { archived: Date.now() } } as any,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      void ctx.client.app.log({
+        body: {
+          service: "opencode-spin",
+          level: "warn",
+          message: `Failed to archive worker session ${sessionID}: ${message}`,
+          extra: { sessionID },
+        },
+      }).catch(() => {})
+    }
+  }
+
+  const createWorkerSession = async (title: string | undefined) => {
+    const newSession = await ctx.client.session.create({
+      body: title ? { title } : {},
+    })
+    await archiveSession(newSession.data.id)
+    return newSession.data.id
+  }
+
   // Standard error handling for the spin-* tools: surface failure as a toast
   // and re-throw so the OpenCode UI shows it in red. spin-interrupt has its
   // own slightly different toast label and stays unwrapped.
@@ -832,17 +891,15 @@ export const SpinPlugin: Plugin = async (ctx) => {
           return
         }
 
-        // CEO drain: when a CEO session finishes processing a relay, dequeue next
-        if (ceoBusy.has(sessionID)) {
-          ceoBusy.delete(sessionID)
+        // CEO drain: on a user-driven turn end, deliver reports queued while
+        // the CEO was busy. Deliveries are noReply: true, so they never wake
+        // the CEO into another turn.
+        if (ceoSessions.has(sessionID)) {
           const queue = ceoQueue.get(sessionID)
           if (queue && queue.length > 0) {
-            const next = queue.shift()!
-            if (queue.length === 0) ceoQueue.delete(sessionID)
-            try {
-              await relayToLead(sessionID, next)
-            } catch {
-              // Silently fail - plugin should not loop on notification errors
+            ceoQueue.delete(sessionID)
+            for (const item of queue) {
+              await deliverToCeo(sessionID, item)
             }
           }
         }
@@ -981,10 +1038,8 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
         async execute(args, toolCtx) {
           return withErrorToast("Session operation failed", async () => {
             if (args.ceo) ceoSessions.add(toolCtx.sessionID)
-            const newSession = await ctx.client.session.create({
-              body: args.title ? { title: args.title } : {},
-            })
-            return await dispatchToWorker(newSession.data.id, args, toolCtx)
+            const sessionID = await createWorkerSession(args.title)
+            return await dispatchToWorker(sessionID, args, toolCtx)
           })
         },
       }),
@@ -1040,7 +1095,7 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
       }),
 
       "spin-box": tool({
-        description: `A boxed agent is a child session the user cannot talk to, unlike spin-session workers, which are user-addressable.
+        description: `A boxed agent is a detached one-shot session, hidden from the default session list but still openable and promptable by the user.
 
 Runs one prompt asynchronously with agent/model override. The reply arrives as a relay when the child goes idle, so stop and wait for it. While it runs the child is tracked, and concurrent prompts to it are rejected.
 
@@ -1064,13 +1119,8 @@ Usage: only when the user asks for a box, or when the lead needs a one-shot Scou
 
         async execute(args, toolCtx) {
           return withErrorToast("Session operation failed", async () => {
-            const newSession = await ctx.client.session.create({
-              body: {
-                parentID: toolCtx.sessionID,
-                ...(args.title ? { title: args.title } : {}),
-              },
-            })
-            return await dispatchToWorker(newSession.data.id, { ...args, relay: true }, toolCtx)
+            const sessionID = await createWorkerSession(args.title)
+            return await dispatchToWorker(sessionID, { ...args, relay: true }, toolCtx)
           })
         },
       }),
