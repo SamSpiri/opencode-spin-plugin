@@ -1,6 +1,6 @@
 ---
 name: spin-rnd
-description: R&D workflow. Load if you are "Spin" orchestrator. Load only if the "spin" skill is loaded.
+description: R&D workflow. Load if you are "Spin" lead. Load only if the "spin" skill is loaded.
 ---
 
 ## Workflow

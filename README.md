@@ -5,14 +5,14 @@
 
 > Orchestrate OpenCode worker sessions across models, agents, and parallel tasks.
 
-Spin gives an OpenCode orchestrator three focused tools for creating workers, continuing them, and stopping them. Worker results are relayed back to the orchestrator, so a workflow can move from research to review to implementation without losing the worker session.
+Spin gives an OpenCode lead three focused tools for creating workers, continuing them, and stopping them. Worker results are relayed back to the lead, so a workflow can move from research to review to implementation without losing the worker session.
 
 ## Why Spin
 
 - Delegate a task to an isolated worker session.
 - Switch models or agents between workflow steps.
 - Run independent workers in parallel.
-- Receive completed results asynchronously instead of blocking the orchestrator.
+- Receive completed results asynchronously instead of blocking the lead.
 - Interrupt a worker that is stuck or no longer useful.
 - Recover deliberately when a worker's context is compacted.
 
@@ -71,7 +71,7 @@ Creates a new worker session and dispatches its first prompt.
 | `model` | Yes | Model in `provider/model` form, such as `github-copilot/gpt-5.4-mini` |
 | `agent` | No | Agent name; set only when a specific agent is requested |
 | `title` | No | Worker title; `[WRK]` is recommended |
-| `relay` | No | Whether to relay worker results back to orchestrator (default `true`); set to `false` for successor orchestrators |
+| `relay` | No | Whether to relay worker results back to lead (default `true`); set to `false` for successor leads |
 
 ```text
 spin-session({
@@ -81,7 +81,7 @@ spin-session({
 })
 ```
 
-The tool returns immediately with a worker session ID. The result arrives later through an orchestrator message.
+The tool returns immediately with a worker session ID. The result arrives later through a lead message.
 
 ### `spin-talk`
 
@@ -102,7 +102,7 @@ spin-talk({
 })
 ```
 
-Only one active dispatch may control a worker at a time, and a worker cannot be controlled by two orchestrator sessions simultaneously.
+Only one active dispatch may control a worker at a time, and a worker cannot be controlled by two lead sessions simultaneously.
 
 ### `spin-interrupt`
 
@@ -125,19 +125,19 @@ Use a cheap model for exploration, a stronger model for review, and switch back 
 
 Each worker has its own context. Start separate `spin-session` calls for genuinely parallel work, then continue each with its own `sessionID`.
 
-The bundled `spin` skill defines these orchestration mechanics; `spin-worker` defines the Scout/Judge role discipline that each worker session loads on the orchestrator's request; `spin-rnd` provides the Scout-Judge development loop and `spin-ops` the direct operations workflow where Judge is dispatched only when the judge floor applies; `ceo` sits above orchestrators and runs a program of independent tracks, one orchestrator each.
+The bundled `spin` skill defines these orchestration mechanics; `spin-worker` defines the Scout/Judge role discipline that each worker session loads on the lead's request; `spin-rnd` provides the Scout-Judge development loop and `spin-ops` the direct operations workflow where Judge is dispatched only when the judge floor applies; `ceo` sits above leads and runs a program of independent tracks, one lead each.
 
 ### Async relays and turns
 
-Dispatches are asynchronous by default. Spin listens for worker `session.idle` and `session.error` events, reads the completed assistant message, and relays the result to the originating orchestrator. A worker can be controlled only after its previous result has been relayed. Async dispatches stop after 50 worker turns; this cap is fixed and is not configurable through the tools.
+Dispatches are asynchronous by default. Spin listens for worker `session.idle` and `session.error` events, reads the completed assistant message, and relays the result to the originating lead. A worker can be controlled only after its previous result has been relayed. Async dispatches stop after 50 worker turns; this cap is fixed and is not configurable through the tools.
 
 ### Context compaction recovery
 
 If a worker context is compacted during a dispatch, the relay marks that fact. Before continuing, ask the worker to re-read the relevant files, realign with the original task, estimate progress, and create a new plan. Compaction may remove substantial working context.
 
-Relays report worker context size in 50k-token steps as `tokens(Nk)`. At >300k, relays append a soft notice to prefer fresh worker sessions — split into parallel workers only when a large amount of remaining work is expected — leaving the mechanics to the orchestrator; at >500k, the notice becomes a hard warning that the worker's output is no longer trustworthy and substantive work should move elsewhere. A retiring worker may spawn its own successor workers and report their sessionIds; those may still be busy at first contact, so `spin-talk` errors are expected until their current task settles.
+Relays report worker context size in 50k-token steps as `tokens(Nk)`. At >300k, relays append a soft notice to prefer fresh worker sessions — split into parallel workers only when a large amount of remaining work is expected — leaving the mechanics to the lead; at >500k, the notice becomes a hard warning that the worker's output is no longer trustworthy and substantive work should move elsewhere. A retiring worker may spawn its own successor workers and report their sessionIds; those may still be busy at first contact, so `spin-talk` errors are expected until their current task settles.
 
-Orchestrator sessions receive matching notices about their own context — a soft notice at >300k to either steer the current work to completion without new work or new dispatches, or prepare a handover; and a hard warning at >500k to retire — injected silently into the session when the orchestrator goes idle. Retirement writes a generous handover file and spins exactly one successor orchestrator via `spin-session` with `relay: false` referencing that file. Handover happens only when every worker is idle — or when the user asks for it — since active workers relay results to the session that dispatched them, so handing over mid-dispatch would split control. Handovers are generous — open items, decisions, sessionIds, file paths, reasoning, and validation results — but never pasted file contents.
+Lead sessions receive matching notices about their own context — a soft notice at >300k to either steer the current work to completion without new work or new dispatches, or prepare a handover; and a hard warning at >500k to retire — injected silently into the session when the lead goes idle. Retirement writes a generous handover file and spins exactly one successor lead via `spin-session` with `relay: false` referencing that file. Handover happens only when every worker is idle — or when the user asks for it — since active workers relay results to the session that dispatched them, so handing over mid-dispatch would split control. Handovers are generous — open items, decisions, sessionIds, file paths, reasoning, and validation results — but never pasted file contents.
 
 ### Agent discovery
 

@@ -7,8 +7,8 @@
  * - Spawn worker sessions with initial prompts
  * - Send follow-up prompts to worker sessions
  * - Run one-shot boxed child sessions with model override (spin-box)
- * - Relay worker results back to orchestrator sessions
- * - Multiple worker sessions per orchestrator
+ * - Relay worker results back to lead sessions
+ * - Multiple worker sessions per lead
  *
  * @version 1.1.0
  * @license MIT
@@ -201,7 +201,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
   type CommMode = "sync" | "async" | "off"
 
   type PendingDispatch = {
-    orchestratorSessionID: string
+    leadSessionID: string
     workerSessionID: string
     workerSlug?: string
     text: string
@@ -242,9 +242,9 @@ export const SpinPlugin: Plugin = async (ctx) => {
   const ceoBusy = new Set<string>()
   const ceoQueue = new Map<string, Array<{ text: string; noReply: boolean }>>()
 
-  // Sessions that dispatched at least once (orchestrators). Their own context
+  // Sessions that dispatched at least once (leads). Their own context
   // size is checked on idle.
-  const orchestratorSessions = new Set<string>()
+  const leadSessions = new Set<string>()
 
   // Event types this plugin handles - early filter to skip noise
   const handledEventTypes = new Set(["session.idle", "session.error"])
@@ -311,23 +311,23 @@ export const SpinPlugin: Plugin = async (ctx) => {
     })
   }
 
-  async function relayToOrchestrator(
-    orchestratorSessionID: string,
+  async function relayToLead(
+    leadSessionID: string,
     options: { text: string; noReply: boolean },
   ) {
-    if (ceoSessions.has(orchestratorSessionID)) {
-      if (ceoBusy.has(orchestratorSessionID)) {
-        const queue = ceoQueue.get(orchestratorSessionID)
+    if (ceoSessions.has(leadSessionID)) {
+      if (ceoBusy.has(leadSessionID)) {
+        const queue = ceoQueue.get(leadSessionID)
         if (queue) {
           queue.push(options)
         } else {
-          ceoQueue.set(orchestratorSessionID, [options])
+          ceoQueue.set(leadSessionID, [options])
         }
         return
       }
-      ceoBusy.add(orchestratorSessionID)
+      ceoBusy.add(leadSessionID)
     }
-    await sendPrompt(orchestratorSessionID, options)
+    await sendPrompt(leadSessionID, options)
   }
 
   function extractTextParts(parts: Array<{ type: string; text?: string }>) {
@@ -473,7 +473,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
     const errorBody = `Error: ${message}\n\nThe worker result could not be recovered. Send your next instruction when ready.`
 
     try {
-      await relayToOrchestrator(settledDispatch.orchestratorSessionID, {
+      await relayToLead(settledDispatch.leadSessionID, {
         noReply: true,
         text: formatWorkerResult(
           settledDispatch,
@@ -530,8 +530,8 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
       if (!settledDispatch.relay) {
         compactedWorkers.delete(sessionID)
-        if (orchestratorSessions.has(sessionID)) {
-          await checkOrchestratorContext(sessionID)
+        if (leadSessions.has(sessionID)) {
+          await checkLeadContext(sessionID)
         }
         return
       }
@@ -569,10 +569,10 @@ export const SpinPlugin: Plugin = async (ctx) => {
         settledDispatch.comm === "async" &&
         nextTurn <= settledDispatch.maxTurns
 
-      await relayToOrchestrator(settledDispatch.orchestratorSessionID, {
+      await relayToLead(settledDispatch.leadSessionID, {
         noReply: !shouldContinue,
         text: shouldContinue
-          ? `${payload}\n\nUser is unaware of this message. Follow Spin Orchestrator workflow and rules. Decide next step as Spin orchestrator: Dispatch again, ask user, or stop.`
+          ? `${payload}\n\nUser is unaware of this message. Follow Spin Lead workflow and rules. Decide next step as Spin lead: Dispatch again, ask user, or stop.`
           : `${payload}\n\nUser is unaware of this message. Stopping here.${settledDispatch.comm === "async" ? ` Reached maxTurns=${settledDispatch.maxTurns}.` : ""}`,
       })
     } catch (error) {
@@ -586,10 +586,10 @@ export const SpinPlugin: Plugin = async (ctx) => {
     }
   }
 
-  // Mirror the worker context notices for orchestrator sessions: on idle,
-  // check the orchestrator's own context size and inject a silent notice when
+  // Mirror the worker context notices for lead sessions: on idle,
+  // check the lead's own context size and inject a silent notice when
   // a threshold is crossed (same crossing semantics as worker notices).
-  async function checkOrchestratorContext(sessionID: string) {
+  async function checkLeadContext(sessionID: string) {
     try {
       const messages = await ctx.client.session.messages({
         path: { id: sessionID },
@@ -614,15 +614,15 @@ export const SpinPlugin: Plugin = async (ctx) => {
       await sendPrompt(sessionID, {
         noReply: true,
         text: hard
-          ? `System Message. User doesn't see this:\n\nOrchestrator limit (user guidance): your session context reached tokens(${stepped / 1000}k) — past the trust boundary; this session is no longer reliable for coordination. Retire now: let in-flight workers finish or interrupt them, and once every worker is idle, write a generous handover file (including reasoning, evidence, decisions, rejected alternatives, open items, worker sessionIds, file paths, and validation results), spin exactly one successor orchestrator session (spin-session with relay: false, e.g. title "[ORCH] successor") referencing that handover file. Then give the user a final summary including the successor sessionID and stop; the successor continues the work.\n\nEnd of System message.`
-          : `System Message. User doesn't see this:\n\nOrchestrator notice (user guidance): your session context reached tokens(${stepped / 1000}k); coordination quality degrades at this size and every follow-up pays for retained context. Decide how to finish: either steer the current work to completion without taking on new work or new dispatches, or hand over to a successor orchestrator. Hand over only once every worker is idle — active workers relay results to this session, and handing over mid-dispatch splits control between two orchestrators — unless the user tells you to hand over earlier. Write a generous handover file (reasoning, evidence, decisions, rejected alternatives, open items, worker sessionIds, file paths, validation results), spin exactly one successor session (spin-session with relay: false) referencing that handover file, then tell the user you are handing over (with the successor session link) and stop. Make the handover generous; do not compress it to pointers alone or pasted file contents.\n\nEnd of System message.`,
+          ? `System Message. User doesn't see this:\n\nLead limit (user guidance): your session context reached tokens(${stepped / 1000}k) — past the trust boundary; this session is no longer reliable for coordination. Retire now: let in-flight workers finish or interrupt them, and once every worker is idle, write a generous handover file (including reasoning, evidence, decisions, rejected alternatives, open items, worker sessionIds, file paths, and validation results), spin exactly one successor lead session (spin-session with relay: false, e.g. title "[ORCH] successor") referencing that handover file. Then give the user a final summary including the successor sessionID and stop; the successor continues the work.\n\nEnd of System message.`
+          : `System Message. User doesn't see this:\n\nLead notice (user guidance): your session context reached tokens(${stepped / 1000}k); coordination quality degrades at this size and every follow-up pays for retained context. Decide how to finish: either steer the current work to completion without taking on new work or new dispatches, or hand over to a successor lead. Hand over only once every worker is idle — active workers relay results to this session, and handing over mid-dispatch splits control between two leads — unless the user tells you to hand over earlier. Write a generous handover file (reasoning, evidence, decisions, rejected alternatives, open items, worker sessionIds, file paths, validation results), spin exactly one successor session (spin-session with relay: false) referencing that handover file, then tell the user you are handing over (with the successor session link) and stop. Make the handover generous; do not compress it to pointers alone or pasted file contents.\n\nEnd of System message.`,
       })
     } catch {
       // Best effort - context notices must never break the idle handler
     }
   }
 
-  // Shared dispatch: validates the worker sessionID isn't the orchestrator's
+  // Shared dispatch: validates the worker sessionID isn't the lead's
   // own, registers the dispatch, runs sync/async path, and returns the
   // standard "Prompt dispatched" message. Used by both spin-session (after it
   // creates a session) and spin-talk.
@@ -638,7 +638,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
     },
     toolCtx: { sessionID: string },
   ): Promise<string> => {
-    orchestratorSessions.add(toolCtx.sessionID)
+    leadSessions.add(toolCtx.sessionID)
 
     if (workerSessionID === toolCtx.sessionID) {
       throw new Error("worker sessionID must be different from current session.")
@@ -647,10 +647,10 @@ export const SpinPlugin: Plugin = async (ctx) => {
     const existingDispatch = activeDispatches.get(workerSessionID)
     if (
       existingDispatch &&
-      existingDispatch.orchestratorSessionID !== toolCtx.sessionID
+      existingDispatch.leadSessionID !== toolCtx.sessionID
     ) {
       throw new Error(
-        `Worker session ${workerSessionID} is already controlled by another orchestrator session.`,
+        `Worker session ${workerSessionID} is already controlled by another lead session.`,
       )
     }
 
@@ -681,7 +681,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
     const workerSlug = sessionTitle.match(/^\[[^\]\r\n]+\]/)?.[0]
 
     const pendingDispatch: PendingDispatch = {
-      orchestratorSessionID: toolCtx.sessionID,
+      leadSessionID: toolCtx.sessionID,
       workerSessionID,
       workerSlug,
       text: args.text,
@@ -734,7 +734,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
     if (!pendingDispatch.relay) {
       // Detached: fire without awaiting the worker's turn. Awaiting
-      // sendPrompt blocks the orchestrator's tool call until idle.
+      // sendPrompt blocks the lead's tool call until idle.
       // Registration stays so the busy guard and the silent
       // idle/error settlement keep working.
       sendPrompt(workerSessionID, {
@@ -770,7 +770,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       const message = error instanceof Error ? error.message : String(error)
 
       try {
-        await relayToOrchestrator(pendingDispatch.orchestratorSessionID, {
+        await relayToLead(pendingDispatch.leadSessionID, {
           noReply: true,
           text: `Worker dispatch failed. ${formatWorkerTarget(pendingDispatch)}\n\n${message}\n\nWorker session: ${pendingDispatch.workerSessionID}.`,
         })
@@ -840,7 +840,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
             const next = queue.shift()!
             if (queue.length === 0) ceoQueue.delete(sessionID)
             try {
-              await relayToOrchestrator(sessionID, next)
+              await relayToLead(sessionID, next)
             } catch {
               // Silently fail - plugin should not loop on notification errors
             }
@@ -848,8 +848,8 @@ export const SpinPlugin: Plugin = async (ctx) => {
         }
 
         if (!activeDispatches.has(sessionID)) {
-          if (orchestratorSessions.has(sessionID)) {
-            await checkOrchestratorContext(sessionID)
+          if (leadSessions.has(sessionID)) {
+            await checkLeadContext(sessionID)
           }
           return
         }
@@ -915,7 +915,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
         const errorBody = `Error: ${errorLabel}\n\nThe worker has been aborted. Send your next instruction when ready.`
 
         try {
-          await relayToOrchestrator(activeDispatch.orchestratorSessionID, {
+          await relayToLead(activeDispatch.leadSessionID, {
             noReply: true,
             text: formatWorkerResult(
               activeDispatch,
@@ -938,7 +938,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
 Use this to start a new worker. To send a follow-up to an existing worker, use spin-talk with that worker's sessionID.
 
-Returns the standard "Prompt dispatched" status. The worker result is relayed back to the orchestrator when the worker goes idle.
+Returns the standard "Prompt dispatched" status. The worker result is relayed back to the lead when the worker goes idle.
 `,
 
         args: {
@@ -960,7 +960,7 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
             .boolean()
             .optional()
             .describe(
-              "Whether to relay results back to this orchestrator session. Set to false when spawning a successor orchestrator or detached session. Default: true",
+              "Whether to relay results back to this lead session. Set to false when spawning a successor lead or detached session. Default: true",
             ),
           ...(ENABLE_ALL_COMM_MODES
             ? {
@@ -994,7 +994,7 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
 
 Use this for every step after the first. To create a new worker, use spin-session instead.
 
-Returns the standard "Prompt dispatched" status. The worker result is relayed back to the orchestrator when the worker goes idle.
+Returns the standard "Prompt dispatched" status. The worker result is relayed back to the lead when the worker goes idle.
 `,
 
         args: {
@@ -1044,7 +1044,7 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
 
 Runs one prompt asynchronously with agent/model override. The reply arrives as a relay when the child goes idle, so stop and wait for it. While it runs the child is tracked, and concurrent prompts to it are rejected.
 
-Usage: only when the user asks for a box, or when the orchestrator needs a one-shot Scout call without asking the user.
+Usage: only when the user asks for a box, or when the lead needs a one-shot Scout call without asking the user.
 `,
 
         args: {
@@ -1081,8 +1081,8 @@ Usage: only when the user asks for a box, or when the orchestrator needs a one-s
 Stops dispatches in progress and removes queued prompts for the worker. Requires the actual session ID returned from a previous spin-session or spin-talk call.
 
 - sessionID: worker session ID (starts with "ses")
-- Aborts in-progress dispatch (if controlled by this orchestrator) and rejects any sync waiter
-- Removes queued prompts for the worker across all orchestrators
+- Aborts in-progress dispatch (if controlled by this lead) and rejects any sync waiter
+- Removes queued prompts for the worker across all leads
 - Marks the worker so upcoming idle events are swallowed
 
 EXAMPLE:
@@ -1113,9 +1113,9 @@ EXAMPLE:
             const activeDispatch = activeDispatches.get(workerSessionID)
             if (
               activeDispatch &&
-              activeDispatch.orchestratorSessionID !== toolCtx.sessionID
+              activeDispatch.leadSessionID !== toolCtx.sessionID
             ) {
-              throw new Error(`Worker session ${workerSessionID} is controlled by another orchestrator session.`)
+              throw new Error(`Worker session ${workerSessionID} is controlled by another lead session.`)
             }
 
             if (!activeDispatch) {
@@ -1132,11 +1132,11 @@ EXAMPLE:
             const waiter = syncWaiters.get(workerSessionID)
             if (waiter) {
               syncWaiters.delete(workerSessionID)
-              waiter.reject(new Error("Worker interrupted by orchestrator"))
+              waiter.reject(new Error("Worker interrupted by lead"))
             } else if (activeDispatch.relay) {
-              const interruptBody = `Worker was interrupted by the orchestrator.\n\nThe worker has been aborted. Send your next instruction when ready.`
+              const interruptBody = `Worker was interrupted by the lead.\n\nThe worker has been aborted. Send your next instruction when ready.`
               try {
-                await relayToOrchestrator(activeDispatch.orchestratorSessionID, {
+                await relayToLead(activeDispatch.leadSessionID, {
                   noReply: true,
                   text: formatWorkerResult(
                     activeDispatch,
