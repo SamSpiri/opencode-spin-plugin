@@ -287,7 +287,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
   function validateSessionID(sessionID: string): string | null {
     if (!sessionID.startsWith("ses")) {
-      return `Invalid session ID format. Session IDs must start with "ses" (e.g. "ses_abc123xyz"). Got: "${sessionID}". Use spin-talk to send a follow-up to an existing worker (pass the sessionID returned from a previous spin-session/spin-talk call). Semantic names like "spin-plane-redux" are not valid session IDs.`
+      return `Invalid session ID format. Session IDs must start with "ses" (e.g. "ses_abc123xyz"). Got: "${sessionID}". Use spin-talk to send a follow-up to an existing session (pass the sessionID returned from a previous spin-session/spin-talk call). Semantic names like "spin-plane-redux" are not valid session IDs.`
     }
     return null
   }
@@ -390,7 +390,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
     usage?: { tokens?: AssistantMessageInfo["tokens"] },
     sessionSummary?: string,
     compacted = false,
-    title = "Worker step complete.",
+    title = "Step complete.",
   ) {
     const details = [
       `sessionId=${dispatch.workerSessionID}`,
@@ -417,21 +417,21 @@ export const SpinPlugin: Plugin = async (ctx) => {
     let contextWarning: string | undefined
     if (tokens) {
       if (stepped >= 500000) {
-        contextWarning = `Context limit (user guidance): worker context reached tokens(${stepped / 1000}k) — past the trust boundary. Output may still seem usable but is too polluted to rely on. Do not continue substantive work in this session; move anything important to a fresh worker. Retierd worker remains queryable via spin-talk for reference only.`
+        contextWarning = `Context limit (user guidance): session context reached tokens(${stepped / 1000}k) — past the trust boundary. Output may still seem usable but is too polluted to rely on. Do not continue substantive work in this session; move anything important to a fresh session. Retired session remains queryable via spin-talk for reference only.`
       } else if (stepped >= 300000) {
-        contextWarning = `Context notice (user guidance): worker context reached tokens(${stepped / 1000}k); output quality degrades at this size. Every follow-up also pays for retained context, so prefer a fresh worker for a new substantive direction. If rotating, ask the retiring worker for a generous handover file now. It should contain at least: reasoning, evidence, decisions, rejected alternatives, state, open questions, file paths, and validation results—not merely pointers or a compact brief. Retired worker stays available via spin-talk for quick clarifications.`
+        contextWarning = `Context notice (user guidance): session context reached tokens(${stepped / 1000}k); output quality degrades at this size. Every follow-up also pays for retained context, so prefer a fresh session for a new substantive direction. If rotating, ask the retiring session for a generous handover file now. It should contain at least: reasoning, evidence, decisions, rejected alternatives, state, open questions, file paths, and validation results—not merely pointers or a compact brief. Retired session stays available via spin-talk for quick clarifications.`
       }
     }
 
     return [
-      `${dispatch.workerSlug ? `${dispatch.workerSlug} ` : ""}${title} This message is Not visible for the user. ${details}${usageLine ? ` ${usageLine}` : ""}${sessionSummary ? ` ${sessionSummary}` : ""}${compacted ? "\nWorker context was compacted during this step." : ""}`,
-      text || "[Worker produced no text output]",
+      `${dispatch.workerSlug ? `${dispatch.workerSlug} ` : ""}${title} This message is Not visible for the user. ${details}${usageLine ? ` ${usageLine}` : ""}${sessionSummary ? ` ${sessionSummary}` : ""}${compacted ? "\nSession context was compacted during this step." : ""}`,
+      text || "[Session produced no text output]",
       ...(compacted
         ? [
-            "Worker context was compacted and may have lost substantial context. Before continuing, use spin-talk to ask the worker to re-read the relevant files, realign with the original task, estimate current progress, and create a new plan.",
+            "Session context was compacted and may have lost substantial context. Before continuing, use spin-talk to ask the session to re-read the relevant files, realign with the original task, estimate current progress, and create a new plan.",
           ]
         : []),
-      `Worker sessionID: ${dispatch.workerSessionID}.`,
+      `Session ID: ${dispatch.workerSessionID}.`,
       ...(contextWarning ? [contextWarning] : []),
     ].join("\n\n")
   }
@@ -461,7 +461,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
     model?: ModelOverride
   }) {
     const details = [
-      `worker=${dispatch.workerSessionID}`,
+      `session=${dispatch.workerSessionID}`,
       dispatch.agent ? `agent=${dispatch.agent}` : undefined,
       dispatch.model
         ? `model=${dispatch.model.providerID}/${dispatch.model.modelID}`
@@ -507,7 +507,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       return
     }
 
-    const errorBody = `Error: ${message}\n\nThe worker result could not be recovered. Send your next instruction when ready.`
+    const errorBody = `Error: ${message}\n\nThe result could not be recovered. Send your next instruction when ready.`
 
     try {
       await relayToLead(settledDispatch.leadSessionID, {
@@ -518,7 +518,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
           undefined,
           undefined,
           wasCompacted,
-          "Worker step failed.",
+          "Step failed.",
         ),
       })
     } catch {
@@ -538,7 +538,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       await failActiveDispatch(
         sessionID,
         activeDispatch,
-        "Worker result did not become available within the retry deadline.",
+        "Result did not become available within the retry deadline.",
       )
       return
     }
@@ -557,7 +557,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
         void failActiveDispatch(
           sessionID,
           activeDispatch,
-          "Worker completed but no assistant message became available.",
+          "Session completed but no assistant message became available.",
         )
         return
       }
@@ -585,7 +585,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
           lastWorkerMessageID: latestInfo.id,
         },
         latestInfo.error
-          ? `${text}\n\nWorker error: ${JSON.stringify(latestInfo.error)}`
+          ? `${text}\n\nSession error: ${JSON.stringify(latestInfo.error)}`
           : text,
         { tokens: latestInfo.tokens },
         sessionSummary,
@@ -609,7 +609,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       await relayToLead(settledDispatch.leadSessionID, {
         noReply: !shouldContinue,
         text: shouldContinue
-          ? `${payload}\n\nUser is unaware of this message. Follow Spin Lead workflow and rules. Decide next step as Spin lead: Dispatch again, ask user, or stop.`
+          ? `${payload}\n\nUser is unaware of this message. Decide next step: dispatch again, ask user, or stop.`
           : `${payload}\n\nUser is unaware of this message. Stopping here.${settledDispatch.comm === "async" ? ` Reached maxTurns=${settledDispatch.maxTurns}.` : ""}`,
       })
     } catch (error) {
@@ -618,7 +618,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
         activeDispatch,
         error instanceof Error
           ? error.message
-          : "Failed to read worker session messages.",
+          : "Failed to read session messages.",
       )
     }
   }
@@ -679,7 +679,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
     leadSessions.add(toolCtx.sessionID)
 
     if (workerSessionID === toolCtx.sessionID) {
-      throw new Error("worker sessionID must be different from current session.")
+      throw new Error("Target sessionID must be different from current session.")
     }
 
     if (ceoSessions.has(workerSessionID)) {
@@ -703,13 +703,13 @@ export const SpinPlugin: Plugin = async (ctx) => {
       existingDispatch.leadSessionID !== toolCtx.sessionID
     ) {
       throw new Error(
-        `Worker session ${workerSessionID} is already controlled by another lead session.`,
+        `Session ${workerSessionID} is already controlled by another session.`,
       )
     }
 
     if (existingDispatch) {
       throw new Error(
-        `Worker session ${workerSessionID} is still busy. Wait for its next relayed result before sending another prompt.`,
+        `Session ${workerSessionID} is still busy. Wait for its next relayed result before sending another prompt.`,
       )
     }
 
@@ -825,14 +825,14 @@ export const SpinPlugin: Plugin = async (ctx) => {
       try {
         await relayToLead(pendingDispatch.leadSessionID, {
           noReply: true,
-          text: `Worker dispatch failed. ${formatWorkerTarget(pendingDispatch)}\n\n${message}\n\nWorker session: ${pendingDispatch.workerSessionID}.`,
+          text: `Dispatch failed. ${formatWorkerTarget(pendingDispatch)}\n\n${message}\n\nSession: ${pendingDispatch.workerSessionID}.`,
         })
       } catch {
         // Silently fail - plugin should not loop on notification errors
       }
     })
 
-    return `Prompt dispatched to worker. ${formatWorkerTarget(pendingDispatch)}. You will be notified when worker step is complete. You can stop now.`
+    return `Prompt dispatched to session. ${formatWorkerTarget(pendingDispatch)}. You will be notified when the step is complete. You can stop now.`
   }
 
   const autoArchiveWorkerSessions = false
@@ -981,7 +981,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
         const errorLabel = properties.error?.name
           ? `${properties.error.name}${properties.error.data?.message ? `: ${properties.error.data.message}` : ""}`
-          : "Unknown worker error"
+          : "Unknown session error"
 
         const waiter = syncWaiters.get(sessionID)
         if (waiter) {
@@ -994,7 +994,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
           return
         }
 
-        const errorBody = `Error: ${errorLabel}\n\nThe worker has been aborted. Send your next instruction when ready.`
+        const errorBody = `Error: ${errorLabel}\n\nThe session has been aborted. Send your next instruction when ready.`
 
         try {
           await relayToLead(activeDispatch.leadSessionID, {
@@ -1005,7 +1005,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
               undefined,
               undefined,
               wasCompacted,
-              "Worker step failed.",
+          "Step failed.",
             ),
           })
         } catch {
@@ -1016,11 +1016,11 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
     tool: {
       "spin-session": tool({
-        description: `Create a new worker session and dispatch the first prompt.
+        description: `Create a new child session and dispatch the first prompt.
 
-Use this to start a new worker. To send a follow-up to an existing worker, use spin-talk with that worker's sessionID.
+Use this to start a new session. To send a follow-up to an existing session, use spin-talk with that session's sessionID.
 
-Returns the standard "Prompt dispatched" status. The worker result is relayed back to the lead when the worker goes idle.
+Returns the standard "Prompt dispatched" status. The result is relayed back when the session goes idle.
 `,
 
         args: {
@@ -1037,7 +1037,7 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
           title: tool.schema
             .string()
             .optional()
-            .describe("Human-readable label for the new worker session. Prefix with slug in brackets, such as [WRK]."),
+            .describe("Human-readable label for the new child session. Prefix with slug in brackets, such as [WRK]."),
           relay: tool.schema
             .boolean()
             .optional()
@@ -1050,14 +1050,14 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
                   .enum(["sync", "async", "off"])
                   .optional()
                   .describe(
-                    'Communication mode: "sync" blocks until worker goes idle, "async" relays result later, "off" relays result, but you will see it when user allows it. Default: "async"',
+                    'Communication mode: "sync" blocks until session goes idle, "async" relays result later, "off" relays result, but you will see it when user allows it. Default: "async"',
                   ),
               }
             : {}),
           ceo: tool.schema
             .boolean()
             .optional()
-            .describe("Enable CEO mode for this session. Worker relays are queued while CEO is busy processing a previous relay."),
+            .describe("Enable CEO mode for this session. Session relays are queued while CEO is busy processing a previous relay."),
         },
 
         async execute(args, toolCtx) {
@@ -1070,18 +1070,18 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
       }),
 
       "spin-talk": tool({
-        description: `Send a follow-up prompt to an existing worker session.
+        description: `Send a follow-up prompt to an existing session.
 
-Use this for every step after the first. To create a new worker, use spin-session instead.
+Use this for every step after the first. To create a new session, use spin-session instead.
 
-Returns the standard "Prompt dispatched" status. The worker result is relayed back to the lead when the worker goes idle.
+Returns the standard "Prompt dispatched" status. The result is relayed back when the session goes idle.
 `,
 
         args: {
           sessionID: tool.schema
             .string()
             .describe(
-              "Existing worker session ID (must start with 'ses'). Use the ID returned from a previous spin-session or spin-talk call. Not a semantic name or title.",
+              "Existing session ID (must start with 'ses'). Use the ID returned from a previous spin-session or spin-talk call. Not a semantic name or title.",
             ),
           text: tool.schema.string().describe("The prompt to send"),
           model: tool.schema
@@ -1099,14 +1099,14 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
                   .enum(["sync", "async", "off"])
                   .optional()
                   .describe(
-                    'Communication mode: "sync" blocks until worker goes idle, "async" relays result later, "off" relays result, but you will see it when user allows it. Default: "async"',
+                    'Communication mode: "sync" blocks until session goes idle, "async" relays result later, "off" relays result, but you will see it when user allows it. Default: "async"',
                   ),
               }
             : {}),
           ceo: tool.schema
             .boolean()
             .optional()
-            .describe("Enable CEO mode for this session. Worker relays are queued while CEO is busy processing a previous relay."),
+            .describe("Enable CEO mode for this session. Session relays are queued while CEO is busy processing a previous relay."),
           envelope: tool.schema
             .boolean()
             .optional()
@@ -1157,18 +1157,18 @@ Usage: only when the user asks for a box, or when the lead needs a one-shot Scou
       }),
 
       "spin-interrupt": tool({
-        description: `Abort an active worker session.
+        description: `Abort an active session.
 
-Stops dispatches in progress and removes queued prompts for the worker. Requires the actual session ID returned from a previous spin-session or spin-talk call.
+Stops dispatches in progress and removes queued prompts for the session. Requires the actual session ID returned from a previous spin-session or spin-talk call.
 
-- sessionID: worker session ID (starts with "ses")
-- Aborts in-progress dispatch (if controlled by this lead) and rejects any sync waiter
-- Removes queued prompts for the worker across all leads
-- Marks the worker so upcoming idle events are swallowed
+- sessionID: child session ID (starts with "ses")
+- Aborts in-progress dispatch (if controlled by this session) and rejects any sync waiter
+- Removes queued prompts for the session across all dispatchers
+- Marks the session so upcoming idle events are swallowed
 
 EXAMPLE:
 
-   # ABORT A WORKER
+   # ABORT A SESSION
    spin-interrupt({
      sessionID: "ses_abc123xyz"
    })
@@ -1178,7 +1178,7 @@ EXAMPLE:
           sessionID: tool.schema
             .string()
             .describe(
-              "Existing worker session ID (must start with 'ses'). Use the ID returned from a previous spin-session or spin-talk call.",
+              "Existing session ID (must start with 'ses'). Use the ID returned from a previous spin-session or spin-talk call.",
             ),
         },
 
@@ -1196,11 +1196,11 @@ EXAMPLE:
               activeDispatch &&
               activeDispatch.leadSessionID !== toolCtx.sessionID
             ) {
-              throw new Error(`Worker session ${workerSessionID} is controlled by another lead session.`)
+              throw new Error(`Session ${workerSessionID} is controlled by another session.`)
             }
 
             if (!activeDispatch) {
-              return `Worker ${workerSessionID} has no active dispatch; nothing to interrupt.`
+              return `Session ${workerSessionID} has no active dispatch; nothing to interrupt.`
             }
 
             removeActiveDispatch(workerSessionID, activeDispatch)
@@ -1213,9 +1213,9 @@ EXAMPLE:
             const waiter = syncWaiters.get(workerSessionID)
             if (waiter) {
               syncWaiters.delete(workerSessionID)
-              waiter.reject(new Error("Worker interrupted by lead"))
+              waiter.reject(new Error("Session interrupted by dispatcher"))
             } else if (activeDispatch.relay) {
-              const interruptBody = `Worker was interrupted by the lead.\n\nThe worker has been aborted. Send your next instruction when ready.`
+              const interruptBody = `Session was interrupted.\n\nThe session has been aborted. Send your next instruction when ready.`
               try {
                 await relayToLead(activeDispatch.leadSessionID, {
                   noReply: true,
@@ -1225,7 +1225,7 @@ EXAMPLE:
                     undefined,
                     undefined,
                     wasCompacted,
-                    "Worker step interrupted.",
+                    "Step interrupted.",
                   ),
                 })
               } catch {
@@ -1233,7 +1233,7 @@ EXAMPLE:
               }
             }
 
-            return `Worker ${workerSessionID} interrupted.`
+            return `Session ${workerSessionID} interrupted.`
           } catch (error) {
             const message =
               error instanceof Error ? error.message : String(error)
