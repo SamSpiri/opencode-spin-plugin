@@ -3,10 +3,9 @@
  *
  * Child session orchestration with agent switching and cross-session control.
  *
- * Features:
+  * Features:
  * - Spawn child sessions with initial prompts
  * - Send follow-up prompts to child sessions
- * - Run one-shot boxed child sessions with model override (spin-box)
  * - Relay child results back to parent sessions
  * - Multiple child sessions per parent
  *
@@ -964,37 +963,6 @@ Returns the standard "Prompt dispatched" status. The result is relayed back when
             const validationError = validateSessionID(args.sessionID)
             if (validationError) throw new Error(validationError)
             return await dispatchToChild(args.sessionID, args, toolCtx)
-          })
-        },
-      }),
-
-      "spin-box": tool({
-        description: `A boxed agent is a detached one-shot session, hidden from the default session list but still openable and promptable by the user.
-
-Runs one prompt asynchronously with agent/model override. The reply arrives as a relay when the child goes idle, so stop and wait for it. While it runs the child is tracked, and concurrent prompts to it are rejected.
-
-Usage: only when the user asks for a box, or when a one-shot call is needed without asking the user.
-`,
-
-        args: {
-          text: tool.schema.string().describe("The prompt to send"),
-          model: tool.schema
-            .string()
-            .describe('Model "provider/model" form, e.g. "github-copilot/gpt-5.4-mini". Prefer cheap model.'),
-          agent: tool.schema
-            .string()
-            .optional()
-            .describe("Optional AGENT SELECTION: only set agent if user asks for it. Available agents: ${agentList}"),
-          title: tool.schema
-            .string()
-            .optional()
-            .describe("Human-readable label for the child session."),
-        },
-
-        async execute(args, toolCtx) {
-          return withErrorToast("Session operation failed", async () => {
-            const sessionID = await createChildSession(args.title)
-            return await dispatchToChild(sessionID, { ...args, reportBack: true }, toolCtx)
           })
         },
       }),

@@ -58,7 +58,6 @@ If Judge requests evidence, route only that request to Scout without adding a co
 
 - `spin-session` — Create a new child and dispatch the first prompt.
 - `spin-talk` — Send follow-ups to an existing child.
-- `spin-box` — Spawn a detached one-shot child session, hidden from the default session list but openable and promptable via its session link; use only when the user asks for a box, or for a one-shot Scout call (no permission needed).
 - `spin-interrupt` — Stop a busy child's current turn. The session survives and stays addressable: follow up with `spin-talk`.
 
 Use `spin-session` exactly once per child. Use `spin-talk` for every later step with that child's `sessionId`. Never send `spin-talk` to a busy child: a child is busy until its relay arrives. Wait for the relay, or call `spin-interrupt` and wait for the interrupt to settle, before dispatching a new prompt.

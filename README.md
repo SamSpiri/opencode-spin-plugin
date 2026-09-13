@@ -5,7 +5,7 @@
 
 > Orchestrate OpenCode child sessions across models, agents, and parallel tasks.
 
-Spin gives an OpenCode parent a focused toolset for creating children, continuing them, stopping them, and launching boxed child tasks. Child results are relayed back to the parent, so a workflow can move from research to review to implementation without losing the child session.
+Spin gives an OpenCode parent a focused toolset for creating children, continuing them, and stopping them. Child results are relayed back to the parent, so a workflow can move from research to review to implementation without losing the child session.
 
 ## Why Spin
 
@@ -107,17 +107,6 @@ spin-talk({
 ```
 
 Only one active dispatch may control a child at a time, and a child cannot be controlled by two parent sessions simultaneously.
-
-### `spin-box`
-
-Spawns a detached one-shot child session and dispatches one prompt to it. The session is hidden from the default session list but remains openable and promptable by the user via its session link. Use it when the user asks for a box, or for a one-shot Scout call.
-
-| Argument | Required | Description |
-| --- | --- | --- |
-| `text` | Yes | Prompt for the child |
-| `model` | Yes | Model in `provider/model` form |
-| `agent` | No | Optional agent override |
-| `title` | No | Child session title |
 
 ### `spin-interrupt`
 
