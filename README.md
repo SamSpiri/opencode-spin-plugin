@@ -93,6 +93,7 @@ Sends a follow-up to an existing worker. Use this for every subsequent step. Pas
 | `text` | Yes | Follow-up prompt |
 | `model` | Yes | Model in `provider/model` form; switch models between steps |
 | `agent` | No | Optional agent override |
+| `envelope` | No | Wrap the message as an inter-agent lead report; set `true` when escalating to the CEO (default `false`) |
 
 ```text
 spin-talk({

@@ -436,6 +436,25 @@ export const SpinPlugin: Plugin = async (ctx) => {
     ].join("\n\n")
   }
 
+  async function formatAgentEnvelope(senderSessionID: string, text: string) {
+    let title = senderSessionID
+    try {
+      const session = await ctx.client.session.get({
+        path: { id: senderSessionID },
+      })
+      if (session.data?.title) title = session.data.title
+    } catch {
+      // Best effort: fall back to the session ID when the title is unavailable.
+    }
+
+    const slug = title.match(/^\[[^\]\r\n]+\]/)?.[0]
+    return [
+      `${slug ? `${slug} ` : ""}Lead report. This message is not visible for the user. sessionId=${senderSessionID} title=${title}`,
+      text || "[Lead produced no text output]",
+      `Lead sessionID: ${senderSessionID}.`,
+    ].join("\n\n")
+  }
+
   function formatWorkerTarget(dispatch: {
     workerSessionID: string
     agent?: string
@@ -653,6 +672,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       model?: string
       comm?: "sync" | "async" | "off"
       relay?: boolean
+      envelope?: boolean
     },
     toolCtx: { sessionID: string },
   ): Promise<string> => {
@@ -666,8 +686,11 @@ export const SpinPlugin: Plugin = async (ctx) => {
       // CEO sessions are user-driven hubs: deliver the escalation silently and
       // never wake them. The CEO reads pending reports on its next user turn.
       if (!args.text) throw new Error("text is required.")
+      const text = args.envelope
+        ? await formatAgentEnvelope(toolCtx.sessionID, args.text)
+        : args.text
       await deliverToCeo(workerSessionID, {
-        text: args.text,
+        text,
         agent: args.agent,
         model: parseModelOverride(args.model),
       })
@@ -1082,6 +1105,12 @@ Returns the standard "Prompt dispatched" status. The worker result is relayed ba
             .boolean()
             .optional()
             .describe("Enable CEO mode for this session. Worker relays are queued while CEO is busy processing a previous relay."),
+          envelope: tool.schema
+            .boolean()
+            .optional()
+            .describe(
+              "Wrap this message as an inter-agent lead report (used when escalating to the CEO). Default: false",
+            ),
         },
 
         async execute(args, toolCtx) {
