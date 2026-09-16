@@ -64,7 +64,7 @@ Use `spin-session` exactly once per child. Use `spin-talk` for every later step 
 
 ## Report budget
 
-Child reports default to a flat budget: checkpoint and outcome reports at most 15 lines; evidence as `file:line` pointers, never pasted content (the other role already sees the tool output). The lead widens the budget per dispatch when the task needs it by stating an explicit limit in the prompt (e.g. "report at most 40 lines"). The cap lives in the prompt, not in this skill.
+Child reports follow the budget defined in `spin-worker`. The lead may widen it per dispatch by stating an explicit limit in the prompt (e.g. "report at most 40 lines"); the widening lives in the prompt.
 
 ## User gate ladder
 
@@ -89,7 +89,7 @@ Children cannot distinguish the user's messages from the parent's, and the user 
 
 ## Handover file
 
-Path: `.tmp/spin-handover/<slug>-<YYYY-MM-DD>.md` inside the workspace. Required sections, in order: objective + authoritative task reference; phase + last verdict; decisions made (with why); rejected alternatives; working-tree state (uncommitted, staged, recent commits); validation done + results; open items + next step; traps and gotchas; session IDs. Generous prose is welcome inside each section; omitting a section is not.
+Path: `.tmp/spin-handover/<slug>-<YYYY-MM-DD>.md` inside the workspace. The sections and their contents are defined in `spin-worker`'s handover discipline; the writing child receives the path from the lead.
 
 ## Child session references (REQUIRED)
 
