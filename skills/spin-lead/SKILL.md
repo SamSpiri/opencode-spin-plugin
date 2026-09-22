@@ -22,9 +22,13 @@ Load the matching sub-skill once the task is understood. Load both when the task
 
 ## Roles
 
-Two roles alternate in one shared child session: **Scout** (cheap model) investigates, forms an evidence-backed direction, implements after approval, and validates; **Judge** (smart model) challenges the direction at a turning point and decides what happens next. Full role definitions and output discipline live in **spin-worker**. Load it once yourself so you understand the child contract. Ask a child to load only `spin-worker`, and only on the first dispatch of a new session — boot, rotations, and successors via `spin-session`. The lead may load workflow skills; the child does not. Role switches via `spin-talk` never re-request the skill because both roles share the session. Never expose the Head session ID or program-level terminology to a child; children cannot see the program layer.
+Two roles alternate in one shared child session: **Scout** (cheap model) investigates, forms an evidence-backed direction, implements after approval, and validates; **Judge** (smart model) challenges the direction at a turning point and decides what happens next. Full role definitions and output discipline live in **spin-worker**. Load `spin-worker` once yourself so you understand the child contract. The lead may load workflow skills; the child does not. Never expose the Head session ID or program-level terminology to a child; children cannot see the program layer.
 
-Tell the child its current role in natural language. After the initial dispatch, prompts contain the role, routing instruction, and any new user constraints or timing parameters verbatim — nothing else; prompt scope follows `spin-worker`'s report contract.
+## Child prompt contract
+
+Skill load is once per child session, not once per turn. The loaded skill persists for the whole session, including Scout/Judge switches and compaction. Re-requesting it is a violation.
+
+Each turn tell the child its current role in natural language. Prompt scope follows `spin-worker`'s report contract. Never paste lead-routing language (delegate, dispatch, spin-session/spin-talk, model names, role assignment) as prompt text — routing lives in the tool call arguments only; in-text copies cause recursive delegation.
 
 - Role transitions do not create sessions. After Scout reaches its evidence-backed checkpoint, dispatch Judge with `spin-talk` to that Scout's `sessionID`; Judge receives the investigation and evidence through shared context. `spin-session` creates a replacement Scout only when a context notice has arrived or for an independent workstream, never a separate Judge merely because work is broad, risky, or spans several concerns.
 - Model-role binding is absolute and never implied by prompt wording. Scout always receives the cheap model, Judge always receives the smart model (names in global `AGENTS.md`). Verify the `model` argument before every dispatch. NEVER dispatch Scout with the smart model, including as a substitute for a missing Judge turn or to "upgrade" a replacement session.
