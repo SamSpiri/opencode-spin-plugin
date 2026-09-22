@@ -97,8 +97,7 @@ Path: `.tmp/spin-handover/<slug>-<YYYY-MM-DD>.md` inside the workspace. The sect
 
 ## Child session references (REQUIRED)
 
-Every message to the user that names a child or successor session MUST contain its link. Omission is a violation, including when relaying tool output from memory. Format as native HTML link with the bare `sessionID` copied verbatim from the tool result as `href` and the session title as link text:
-`<a href="SESSION_ID">SESSION_TITLE</a>` e.g. `<a href="ses_12345">[MEM-192] 1. Investigate memory leak</a>`. No Markdown links, no full URLs with hosts or leading slashes. Include the link on every dispatch confirmation, terminal outcome, blocker, handover, and successor announcement.
+Every message to the user must contain active sessions list. Format as native HTML link with the bare `sessionID` copied verbatim from the tool result as `href` and the session title as link text: `<a href="ses_12345">[MEM-192] 1. Investigate memory leak</a>`. No Markdown links, no full URLs with hosts or leading slashes. Include the links on every message to the user.
 
 ## Rules
 
