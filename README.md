@@ -96,7 +96,7 @@ Sends a follow-up to an existing child. Use this for every subsequent step. Pass
 | `agent` | No | Optional agent override |
 | `reportBack` | No | Whether to relay results back to this session (default `true`); set to `false` for detached dispatches |
 | `wake` | No | Whether dispatching wakes the target into a new turn (default `true`); set to `false` for silent reports |
-| `envelope` | No | Wrap the message as an inter-agent child report; set `true` when escalating to another session (default `false`) |
+| `escalate` | No | Wrap the message as an inter-agent report; set `true` only when reporting **up** the hierarchy to a parent/top session (default `false`, never set when talking to child sessions) |
 
 ```text
 spin-talk({
@@ -141,7 +141,7 @@ The bundled `spin-lead` skill defines these orchestration mechanics; `spin-worke
 
 ### Head hub mode
 
-A Head session coordinates several leads. Leads spun with `reportBack: false` escalate to the Head session ID when they have a decision-worthy outcome or blocker. Escalations use `spin-talk` with `envelope: true`, `wake: false`: the plugin never wakes a Head on its own, so only user input starts a Head turn. The Head reads pending reports at the start of its next user turn.
+A Head session coordinates several leads. Leads spun with `reportBack: false` escalate to the Head session ID when they have a decision-worthy outcome or blocker. Escalations use `spin-talk` with `escalate: true`, `wake: false`: the plugin never wakes a Head on its own, so only user input starts a Head turn. The Head reads pending reports at the start of its next user turn.
 
 ### Async relays and turns
 

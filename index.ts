@@ -405,9 +405,9 @@ export const SpinPlugin: Plugin = async (ctx) => {
 
     const slug = title.match(/^\[[^\]\r\n]+\]/)?.[0]
     return [
-      `${slug ? `${slug} ` : ""}Child report. This message is not visible for the user. sessionId=${senderSessionID} title=${title}`,
-      text || "[Child produced no text output]",
-      `Child sessionID: ${senderSessionID}.`,
+      `${slug ? `${slug} ` : ""}Inter-agent report. This message is not visible for the user. sessionId=${senderSessionID} title=${title}`,
+      text || "[No report text]",
+      `Sender sessionID: ${senderSessionID}.`,
     ].join("\n\n")
   }
 
@@ -605,7 +605,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       model?: string
       reportBack?: boolean
       wake?: boolean
-      envelope?: boolean
+      escalate?: boolean
     },
     toolCtx: { sessionID: string },
   ): Promise<string> => {
@@ -619,7 +619,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
       throw new Error("text is required.")
     }
 
-    const text = args.envelope
+    const text = args.escalate
       ? await formatAgentEnvelope(toolCtx.sessionID, args.text)
       : args.text
     const model = parseModelOverride(args.model)
@@ -952,11 +952,11 @@ Returns the standard "Prompt dispatched" status. The result is relayed back when
             .boolean()
             .optional()
             .describe("Whether dispatching wakes the target session into a new turn. Set to false for silent reports that wait for the target's next user turn; implies reportBack false. Default: true"),
-          envelope: tool.schema
+          escalate: tool.schema
             .boolean()
             .optional()
             .describe(
-              "Wrap this message as an inter-agent child report (used when escalating to parent session). Default: false",
+              "Wrap this message as an inter-agent report. Use ONLY when reporting UP the hierarchy to a parent/top session (escalation); never use when talking downward to child sessions. Default: false",
             ),
         },
 
