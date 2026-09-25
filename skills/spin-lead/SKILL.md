@@ -22,7 +22,7 @@ Load the matching sub-skill once the task is understood. Load both when the task
 
 ## Roles
 
-Two roles alternate in one shared child session: **Scout** (cheap model) investigates, forms an evidence-backed direction, implements after approval, and validates; **Judge** (smart model) challenges the direction at a turning point and decides what happens next. Full role definitions and output discipline live in **spin-worker**. Load `spin-worker` once yourself so you understand the child contract. The lead may load workflow skills; the child does not. Never expose the Head session ID or program-level terminology to a child; children cannot see the program layer.
+Two roles alternate in one shared child session: **Scout** (cheap model) investigates, forms an evidence-backed direction, implements after approval, and validates; **Judge** (smart model) challenges the direction at a turning point and decides what happens next. Full role definitions and output discipline live in **spin-worker**. Load `spin-worker` once yourself so you understand the child contract. Ask a child to load just `spin-worker`, and only on the first dispatch of a new session — boot, rotations, and successors via `spin-session`. The lead may load workflow skills; the child does not. Never expose the Head session ID or program-level terminology to a child; children cannot see the program layer.
 
 ## Child prompt contract
 
