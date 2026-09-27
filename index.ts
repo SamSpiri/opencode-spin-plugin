@@ -854,7 +854,7 @@ export const SpinPlugin: Plugin = async (ctx) => {
           return
         }
 
-        const errorBody = `Error: ${errorLabel}\n\nThe session has been aborted. Send your next instruction when ready.`
+        const errorBody = `Error: ${errorLabel}\n\nThe turn has been aborted. Send your next instruction when ready.`
 
         try {
           await relayToParent(activeDispatch.parentSessionID, {
@@ -970,7 +970,7 @@ Returns the standard "Prompt dispatched" status. The result is relayed back when
       }),
 
       "spin-interrupt": tool({
-        description: `Abort an active session.
+        description: `Stops an active turn in the session.
 
 Stops dispatches in progress and removes queued prompts for the session. Requires the actual session ID returned from a previous spin-session or spin-talk call.
 
@@ -1024,7 +1024,7 @@ EXAMPLE:
             await ctx.client.session.abort({ path: { id: childSessionID } })
 
             if (activeDispatch.reportBack) {
-              const interruptBody = `Session was interrupted.\n\nThe session has been aborted. Send your next instruction when ready.`
+              const interruptBody = `Turn was interrupted.\nSend your next instruction when ready.`
               try {
                 await relayToParent(activeDispatch.parentSessionID, {
                   wake: false,
@@ -1034,7 +1034,7 @@ EXAMPLE:
                     undefined,
                     undefined,
                     wasCompacted,
-                    "Step interrupted.",
+                    "Turn interrupted.",
                   ),
                 })
               } catch {
@@ -1042,7 +1042,7 @@ EXAMPLE:
               }
             }
 
-            return `Session ${childSessionID} interrupted.`
+            return `Turn for SessionId ${childSessionID} was interrupted.`
           } catch (error) {
             const message =
               error instanceof Error ? error.message : String(error)
