@@ -53,6 +53,6 @@ Relays carry `tokens(Nk)`. Past limits the worker is untrustworthy: have it writ
 
 ## Links (REQUIRED)
 
-Every message to the user lists active sessions as native HTML links with the bare dispatched `sessionID` as `href` and title as text: `<a href="ses_...">[WRK] title</a>`. No markdown links, no full URLs. Confirm every `tools.spin.session` / `tools.spin.talk` dispatch same turn with its link; never relay internal progress chatter.
+Every message to the user lists few last dispatched sessions with bare dispatched sessionID: "`ses_12345567` Title". No markdown links, no URLs. Confirm every `tools.spin.session` / `tools.spin.talk` dispatch same turn with its link; never relay internal progress chatter.
 
 At escalations and terminal outcome lead with `Where everything stands:` then `Item | State` table, one row per scope/decision. State is `✅` done + evidence, `🔄` in flight + next step, `❌` blocked + owner. Short noun phrases, no prose.
