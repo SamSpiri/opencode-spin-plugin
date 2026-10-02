@@ -21,7 +21,7 @@ First locate the authoritative task: ticket, issue, or document. It stays the sc
 
 ## Advisor per worker
 
-Tell the worker to load advisor skill by opening its first prompt with `Use advisor skill`. Omit advisor only for obviously mechanical or low-risk tasks (lookup, one-file fix): then send a plain self-contained prompt and gate the result yourself.
+Tell every new worker to load advisor skill. Omit advisor only for obviously mechanical or low-risk tasks (lookup, one-file fix): then gate the result yourself.
 
 Advisor-down: hold until user fixes advisor tool. 
 
