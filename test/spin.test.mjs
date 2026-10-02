@@ -162,6 +162,11 @@ const talk = (h, c, text) => h.ctx._t.talk.execute({ sessionID: c, text }, toolC
 const body = (h, i = 0) => h.relays()[i]?.text ?? ""
 const count = (text, marker) => text.split(marker).length - 1
 const busy = async (h, c) => { try { await talk(h, c, "probe"); return false } catch { return true } }
+const fmtLocal = (ms) => {
+  const d = new Date(ms)
+  const p = (n) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
 
 let passed = 0
 let failedTests = 0
@@ -198,6 +203,64 @@ test("multi-message run relays every text part in order once (excludes reasoning
     check(text.indexOf("[[alpha]]") < text.indexOf("[[alpha2]]") && text.indexOf("[[alpha2]]") < text.indexOf("[[beta]]") && text.indexOf("[[beta]]") < text.indexOf("[[gamma]]"), "chronological order")
     check(!text.includes("PRE_DISPATCH") && !text.includes("SECRET_REASONING") && !text.includes("TOOL_OUTPUT"), "negative controls excluded")
     check(h.acceptedRelays().length === 1 && Boolean(h.relays()[0]?.id), "relay accepted with nonempty id")
+  } finally { stop(h) }
+})
+
+test("relay interleaves a tool-run marker between text blocks and excludes tool/reasoning content", async () => {
+  const h = await boot()
+  try {
+    await dispatch(h)
+    const c = h.childId()
+    const t0 = Date.now()
+    const toolAt = t0 + 5000
+    h.messages[c] = [
+      parts("m1", t0 + 100, [
+        { type: "reasoning", text: "SECRET_REASONING" },
+        { type: "text", text: "[[before]]" },
+        { type: "tool", name: "shell", time: { created: toolAt }, state: { status: "completed" }, text: "TOOL_OUTPUT_1" },
+        { type: "tool", name: "read", text: "TOOL_OUTPUT_2" },
+        { type: "tool", name: "edit", text: "TOOL_OUTPUT_3" },
+        { type: "reasoning", text: "SECRET_REASONING_2" },
+        { type: "text", text: "[[after]]" },
+      ]),
+    ]
+    h.events.push(started(c), succeeded(c))
+    await advance(600)
+    check(h.relays().length === 1, "exactly one relay", h.relays().length)
+    const text = body(h)
+    const marker = `${fmtLocal(toolAt)} Called tools: 3 (shell, read, edit)`
+    check(count(text, "Called tools:") === 1, "one tool marker", text)
+    check(text.includes(marker), "marker format, local timestamp and names", marker)
+    check(text.indexOf("[[before]]") < text.indexOf(marker) && text.indexOf(marker) < text.indexOf("[[after]]"), "marker interleaved between text")
+    check(!text.includes("TOOL_OUTPUT") && !text.includes("SECRET_REASONING"), "tool and reasoning content excluded")
+  } finally { stop(h) }
+})
+
+test("adjacent tool runs merge across messages, dedupe names, and use the first call time", async () => {
+  const h = await boot()
+  try {
+    await dispatch(h)
+    const c = h.childId()
+    const t0 = Date.now()
+    const firstAt = t0 + 4000
+    h.messages[c] = [
+      parts("m1", t0 + 100, [
+        { type: "tool", name: "grep", time: { created: firstAt } },
+        { type: "tool", name: "grep" },
+        { type: "text", text: "[[between]]" },
+      ]),
+      parts("m2", t0 + 200, [
+        { type: "tool", name: "glob" },
+        { type: "text", text: "[[solo]]" },
+      ]),
+    ]
+    h.events.push(started(c), succeeded(c))
+    await advance(600)
+    const text = body(h)
+    check(count(text, "Called tools:") === 2, "runs separated by text stay separate", text)
+    check(text.includes(`${fmtLocal(firstAt)} Called tools: 2 (grep)`), "first call time with deduped names", text)
+    check(text.includes("Called tools: 1 (glob)"), "later run name", text)
+    check(text.indexOf("Called tools: 2") < text.indexOf("[[between]]") && text.indexOf("[[between]]") < text.indexOf("Called tools: 1"), "runs interleaved with text")
   } finally { stop(h) }
 })
 

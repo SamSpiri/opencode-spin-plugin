@@ -223,13 +223,20 @@ export default Plugin.define({
     // The server's message shape drifts across versions; normalize defensively
     // so inspection never throws or silently matches nothing (both wedge the
     // dispatch with no relay). Mirrors the proven v1 mapping.
+    type NormalizedPart = {
+      type: string
+      text?: string
+      name?: string
+      time?: { created?: unknown }
+    }
+
     type NormalizedMessage = {
       id?: string
       role?: string
       time: { created: number; completed?: number }
       tokens?: AssistantMessage["tokens"]
       error?: unknown
-      parts: Array<{ type: string; text?: string }>
+      parts: NormalizedPart[]
     }
 
     async function getSessionMessages(
@@ -246,15 +253,74 @@ export default Plugin.define({
       }))
     }
 
-    function extractTextParts(parts: NormalizedMessage["parts"]) {
-      return parts
-        .flatMap((part) =>
-          part.type === "text" && typeof part.text === "string"
-            ? [part.text.trim()]
-            : [],
-        )
-        .filter(Boolean)
-        .join("\n\n")
+    // Tool parts carry an epoch-ms `time.created`; fall back to the containing
+    // message's created time when a part omits it.
+    function partEpoch(part: NormalizedPart): number | undefined {
+      const value = part.time?.created
+      if (typeof value === "number") return Number.isFinite(value) ? value : undefined
+      if (typeof value === "string") {
+        const parsed = Date.parse(value)
+        return Number.isNaN(parsed) ? undefined : parsed
+      }
+      if (value instanceof Date) return value.getTime()
+      return undefined
+    }
+
+    function formatLocalTimestamp(epochMs: number): string {
+      const date = new Date(epochMs)
+      const pad = (value: number) => String(value).padStart(2, "0")
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    }
+
+    // Walk assistant messages and their parts chronologically, emitting text in
+    // order and replacing each contiguous run of tool calls with one marker
+    // line. Reasoning and tool content stay out of the body.
+    function formatRelayBody(messages: NormalizedMessage[]): string {
+      const blocks: string[] = []
+      let textBlock: string[] = []
+      let toolCount = 0
+      let toolNames: string[] = []
+      let toolStart: number | undefined
+
+      const flushText = () => {
+        const text = textBlock.filter(Boolean).join("\n\n")
+        if (text) blocks.push(text)
+        textBlock = []
+      }
+      const flushTools = () => {
+        if (!toolCount) return
+        const stamp =
+          toolStart === undefined ? "" : `${formatLocalTimestamp(toolStart)} `
+        const names = toolNames.length ? ` (${toolNames.join(", ")})` : ""
+        blocks.push(`${stamp}Called tools: ${toolCount}${names}`)
+        toolCount = 0
+        toolNames = []
+        toolStart = undefined
+      }
+
+      for (const message of messages) {
+        for (const part of message.parts) {
+          if (part.type === "text") {
+            const text = typeof part.text === "string" ? part.text.trim() : ""
+            if (!text) continue
+            if (toolCount) {
+              flushText()
+              flushTools()
+            }
+            textBlock.push(text)
+          } else if (part.type === "tool") {
+            if (!toolCount) {
+              toolStart = partEpoch(part) ?? message.time.created
+            }
+            toolCount += 1
+            const name = typeof part.name === "string" ? part.name.trim() : ""
+            if (name && !toolNames.includes(name)) toolNames.push(name)
+          }
+        }
+      }
+      flushText()
+      flushTools()
+      return blocks.join("\n\n")
     }
 
     function summarizeSessionContent(messages: NormalizedMessage[]) {
@@ -561,10 +627,7 @@ export default Plugin.define({
         }
 
         const latest = assistantMessages[assistantMessages.length - 1]
-        const text = assistantMessages
-          .map((message) => extractTextParts(message.parts))
-          .filter(Boolean)
-          .join("\n\n")
+        const text = formatRelayBody(assistantMessages)
 
         const sessionError =
           typeof latest.error === "string"
