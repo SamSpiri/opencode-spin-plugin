@@ -150,6 +150,10 @@ const bgShell = (key, s) => ({ type: "session.tool.success", data: { sessionID: 
 const bgSubagent = (childID, s) => ({ type: "session.tool.success", data: { sessionID: s, metadata: { status: "running", sessionID: childID, output: [] } } })
 const shellDone = (key, s) => ({ type: "session.synthetic", data: { sessionID: s, text: `<shell id="${key}"/>`, metadata: { source: "shell", shellID: key, jobID: key, state: "completed", exit: 0 } } })
 const subagentDone = (childID, s) => ({ type: "session.synthetic", data: { sessionID: s, text: "<subagent/>", metadata: { source: "subagent", childID, state: "completed" } } })
+const inboxSynthetic = (key, s) => ({ type: "session.inbox.enqueued", data: { sessionID: s, inboxID: `in_${key}`, item: { type: "synthetic", payload: { text: `<shell id="${key}"/>`, metadata: { source: "shell", shellID: key, jobID: key, state: "completed", exit: 0 } }, delivery: "steer" } } })
+const inboxSubagent = (childID, s) => ({ type: "session.inbox.enqueued", data: { sessionID: s, inboxID: `in_${childID}`, item: { type: "synthetic", payload: { text: "<subagent/>", metadata: { source: "subagent", childID, state: "completed" } }, delivery: "steer" } } })
+// user item deliberately carries shell-looking metadata to prove item.type (not missing metadata) gates tracking.
+const inboxUser = (s, metadata = { source: "shell", shellID: "sh_u", jobID: "sh_u", state: "completed" }) => ({ type: "session.inbox.enqueued", data: { sessionID: s, inboxID: "in_user", item: { type: "user", payload: { text: "user message", metadata }, delivery: "queue" } } })
 const amsg = (id, created, text) => ({ id, type: "assistant", time: { created, completed: created + 1 }, content: [{ type: "text", text }], tokens: { input: 10, output: 10 } })
 const parts = (id, created, content) => ({ id, type: "assistant", time: { created, completed: created + 1 }, content, tokens: { input: 10, output: 10 } })
 const streaming = (id, created, text) => ({ id, type: "assistant", time: { created }, content: [{ type: "text", text }], tokens: { input: 1, output: 1 } })
@@ -590,6 +594,173 @@ test("stale inspection re-arms after a blocked context read", async () => {
     await advance(600)
     check(h.relays().length === 1, "stale inspection re-armed and relayed", h.relays().length)
     check(body(h).includes("[[phase1]]") && body(h).includes("[[phase2]]"), "both phases relayed after re-arm")
+  } finally { stop(h) }
+})
+
+test("continuation terminal without execution.started still relays exactly once", async () => {
+  const h = await boot()
+  try {
+    await dispatch(h)
+    const c = h.childId()
+    const t0 = Date.now()
+    h.events.push(started(c), bgShell("sh_live", c))
+    h.messages[c] = [amsg("m1", t0 + 100, "[[phase1]]")]
+    h.events.push(succeeded(c))
+    await advance(600)
+    check(h.relays().length === 0, "no premature relay before the shell completes", h.relays().length)
+    h.events.push(shellDone("sh_live", c))
+    await advance(600)
+    check(h.relays().length === 0, "no relay while continuation debt unconsumed", h.relays().length)
+    h.messages[c].push(amsg("m2", t0 + 200, "[[phase2]]"))
+    h.events.push(succeeded(c))
+    await advance(600)
+    check(h.relays().length === 1, "one relay after the continuation terminal", h.relays().length)
+    check(body(h).includes("[[phase1]]") && body(h).includes("[[phase2]]"), "both phases relayed")
+    check(body(h).indexOf("[[phase1]]") < body(h).indexOf("[[phase2]]"), "order preserved")
+    check(!(await busy(h, c)), "dispatch retired after continuation terminal")
+  } finally { stop(h) }
+})
+
+test("continuation terminal with execution.started relays exactly once", async () => {
+  const h = await boot()
+  try {
+    await dispatch(h)
+    const c = h.childId()
+    const t0 = Date.now()
+    h.events.push(started(c), bgShell("sh_live2", c))
+    h.messages[c] = [amsg("m1", t0 + 100, "[[phase1]]")]
+    h.events.push(succeeded(c))
+    await advance(600)
+    check(h.relays().length === 0, "no premature relay before the shell completes", h.relays().length)
+    h.events.push(shellDone("sh_live2", c))
+    await advance(600)
+    check(h.relays().length === 0, "no relay while continuation debt unconsumed", h.relays().length)
+    h.events.push(started(c))
+    h.messages[c].push(amsg("m2", t0 + 200, "[[phase2]]"))
+    h.events.push(succeeded(c))
+    await advance(600)
+    check(h.relays().length === 1, "one relay after the continuation terminal", h.relays().length)
+    check(body(h).includes("[[phase1]]") && body(h).includes("[[phase2]]"), "both phases relayed")
+    check(!(await busy(h, c)), "dispatch retired after continuation terminal")
+  } finally { stop(h) }
+})
+
+test("live shape: continuation synthetic via inbox.enqueued relays once after the continuation terminal", async () => {
+  const h = await boot()
+  try {
+    await dispatch(h)
+    const c = h.childId()
+    const t0 = Date.now()
+    h.events.push(started(c), bgShell("sh_inbox", c))
+    h.messages[c] = [amsg("m1", t0 + 100, "[[phase1]]")]
+    h.events.push(succeeded(c))
+    await advance(600)
+    check(h.relays().length === 0, "no relay while shell obligation pending", h.relays().length)
+    h.events.push(inboxSynthetic("sh_inbox", c))
+    await advance(600)
+    check(h.relays().length === 0, "no relay while continuation debt unconsumed", h.relays().length)
+    h.events.push(started(c))
+    h.messages[c].push(amsg("m2", t0 + 200, "[[phase2]]"))
+    h.events.push(succeeded(c))
+    await advance(600)
+    check(h.relays().length === 1, "one relay after continuation terminal", h.relays().length)
+    check(body(h).includes("[[phase1]]") && body(h).includes("[[phase2]]"), "both phases relayed")
+    check(body(h).indexOf("[[phase1]]") < body(h).indexOf("[[phase2]]"), "order preserved")
+    check(!(await busy(h, c)), "dispatch retired after continuation terminal")
+  } finally { stop(h) }
+})
+
+test("inbox.enqueued user item does not clear a background obligation", async () => {
+  const h = await boot()
+  try {
+    await dispatch(h)
+    const c = h.childId()
+    const t0 = Date.now()
+    h.events.push(started(c), bgShell("sh_u", c))
+    h.messages[c] = [amsg("m1", t0 + 100, "[[phase1]]")]
+    h.events.push(succeeded(c))
+    await advance(600)
+    check(h.relays().length === 0, "no relay while shell pending", h.relays().length)
+    h.events.push(inboxUser(c), succeeded(c))
+    await advance(600)
+    check(h.relays().length === 0, "user item did not clear the obligation", h.relays().length)
+    check(await busy(h, c), "dispatch still tracked")
+    h.events.push(inboxSynthetic("sh_u", c))
+    h.messages[c].push(amsg("m2", t0 + 200, "[[phase2]]"))
+    h.events.push(started(c), succeeded(c))
+    await advance(600)
+    check(h.relays().length === 1 && body(h).includes("[[phase1]]") && body(h).includes("[[phase2]]"), "relays after the real completion", h.relays().length)
+    check(!(await busy(h, c)), "dispatch retired")
+  } finally { stop(h) }
+})
+
+test("unrelated synthetic key does not clear a pending obligation", async () => {
+  const h = await boot()
+  try {
+    await dispatch(h)
+    const c = h.childId()
+    const t0 = Date.now()
+    h.events.push(started(c), bgShell("sh_real", c))
+    h.messages[c] = [amsg("m1", t0 + 100, "[[phase1]]")]
+    h.events.push(succeeded(c))
+    await advance(600)
+    check(h.relays().length === 0, "no relay while real obligation pending", h.relays().length)
+    h.events.push(inboxSynthetic("sh_other", c), succeeded(c))
+    await advance(600)
+    check(h.relays().length === 0, "unrelated synthetic key did not clear the obligation", h.relays().length)
+    check(await busy(h, c), "dispatch still tracked")
+    h.events.push(inboxSynthetic("sh_real", c))
+    h.messages[c].push(amsg("m2", t0 + 200, "[[phase2]]"))
+    h.events.push(started(c), succeeded(c))
+    await advance(600)
+    check(h.relays().length === 1 && body(h).includes("[[phase1]]") && body(h).includes("[[phase2]]"), "relays after the matching completion", h.relays().length)
+  } finally { stop(h) }
+})
+
+test("duplicate completion via both shapes for a unique-key job is harmless", async () => {
+  const h = await boot()
+  try {
+    await dispatch(h)
+    const c = h.childId()
+    const t0 = Date.now()
+    h.events.push(started(c), bgShell("sh_dup2", c))
+    h.messages[c] = [amsg("m1", t0 + 100, "[[phase1]]")]
+    h.events.push(succeeded(c))
+    await advance(600)
+    h.events.push(shellDone("sh_dup2", c), inboxSynthetic("sh_dup2", c))
+    await advance(600)
+    check(h.relays().length === 0, "no premature relay from duplicate completion", h.relays().length)
+    h.messages[c].push(amsg("m2", t0 + 200, "[[phase2]]"))
+    h.events.push(started(c), succeeded(c))
+    await advance(600)
+    check(h.relays().length === 1 && body(h).includes("[[phase2]]"), "relays once after the continuation", h.relays().length)
+    check(!(await busy(h, c)), "dispatch retired")
+  } finally { stop(h) }
+})
+
+test("KNOWN LIMITATION: reused-session obligations double-decrement on dual-shaped completion", async () => {
+  // Documents an unproven cross-runtime hazard: if one completion is emitted
+  // both as session.synthetic and session.inbox.enqueued while two jobs share a
+  // reused-session key, both decrement the count and the obligation clears
+  // early. The live runtime emits only inbox.enqueued, so it does not occur
+  // there; no shared completion identity exists to dedupe without also
+  // suppressing legitimate distinct completions. Tripwire: if tracking is ever
+  // hardened, this expectation should flip.
+  const h = await boot()
+  try {
+    await dispatch(h)
+    const c = h.childId()
+    const t0 = Date.now()
+    h.events.push(started(c), bgSubagent("ses_g", c), bgSubagent("ses_g", c))
+    h.messages[c] = [amsg("m1", t0 + 100, "[[phase1]]")]
+    h.events.push(succeeded(c))
+    await advance(600)
+    check(h.relays().length === 0, "no relay while both obligations pending", h.relays().length)
+    h.events.push(subagentDone("ses_g", c), inboxSubagent("ses_g", c)) // one completion, both shapes
+    h.messages[c].push(amsg("m2", t0 + 200, "[[phase2]]"))
+    h.events.push(started(c), succeeded(c))
+    await advance(600)
+    check(h.relays().length === 1, "KNOWN LIMITATION manifests: premature settle on dual-shaped completion", h.relays().length)
   } finally { stop(h) }
 })
 

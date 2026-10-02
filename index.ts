@@ -836,6 +836,43 @@ export default Plugin.define({
       )
     }
 
+    // Settle a background obligation from a completed shell/subagent synthetic.
+    // The runtime delivers these as session.synthetic or, on newer builds, as
+    // session.inbox.enqueued with item.type "synthetic"; both shapes funnel
+    // here so pendingBackground stays authoritative.
+    function applySyntheticCompletion(
+      dispatch: ActiveDispatch,
+      metadata: Record<string, unknown> | undefined,
+    ) {
+      if (metadata?.source !== "shell" && metadata?.source !== "subagent") return
+      const key =
+        typeof metadata.shellID === "string"
+          ? metadata.shellID
+          : typeof metadata.jobID === "string"
+            ? metadata.jobID
+            : typeof metadata.childID === "string"
+              ? metadata.childID
+              : undefined
+      const pending = dispatch.pendingBackground
+      const count = key ? pending?.get(key) ?? 0 : 0
+      const tracked = count > 0
+      if (tracked && key && pending) {
+        if (count <= 1) pending.delete(key)
+        else pending.set(key, count - 1)
+      }
+      if (key) {
+        if (!dispatch.settledBackground) dispatch.settledBackground = new Set()
+        dispatch.settledBackground.add(key)
+      }
+      // Only a completed tracked obligation proves a continuation turn will
+      // follow; an unrelated synthetic (e.g. a user command) must not create
+      // continuation debt.
+      if (tracked) {
+        if (!dispatch.executing) dispatch.continuation = true
+        dispatch.activity = (dispatch.activity ?? 0) + 1
+      }
+    }
+
     async function handleEvent(
       event: Awaited<
         ReturnType<typeof ctx.event.subscribe>
@@ -879,35 +916,18 @@ export default Plugin.define({
       if (event.type === "session.synthetic") {
         const dispatch = activeDispatches.get(event.data.sessionID)
         if (dispatch) {
-          const metadata = event.data.metadata
-          if (metadata?.source === "shell" || metadata?.source === "subagent") {
-            const key =
-              typeof metadata.shellID === "string"
-                ? metadata.shellID
-                : typeof metadata.jobID === "string"
-                  ? metadata.jobID
-                  : typeof metadata.childID === "string"
-                    ? metadata.childID
-                    : undefined
-            const pending = dispatch.pendingBackground
-            const count = key ? pending?.get(key) ?? 0 : 0
-            const tracked = count > 0
-            if (tracked && key && pending) {
-              if (count <= 1) pending.delete(key)
-              else pending.set(key, count - 1)
-            }
-            if (key) {
-              if (!dispatch.settledBackground) dispatch.settledBackground = new Set()
-              dispatch.settledBackground.add(key)
-            }
-            // Only a completed tracked obligation proves a continuation turn
-            // will follow; an unrelated synthetic (e.g. a user command) must
-            // not create continuation debt.
-            if (tracked) {
-              if (!dispatch.executing) dispatch.continuation = true
-              dispatch.activity = (dispatch.activity ?? 0) + 1
-            }
-          }
+          applySyntheticCompletion(dispatch, event.data.metadata)
+        }
+        return
+      }
+
+      // Newer runtime: the synthetic continuation arrives as an enqueued inbox
+      // item rather than a session.synthetic event. Ignore user/other items.
+      if (event.type === "session.inbox.enqueued") {
+        const dispatch = activeDispatches.get(event.data.sessionID)
+        const item = event.data.item
+        if (dispatch && item?.type === "synthetic") {
+          applySyntheticCompletion(dispatch, item.payload?.metadata)
         }
         return
       }
@@ -938,6 +958,10 @@ export default Plugin.define({
           return
         }
         pendingDispatch.executing = false
+        // A terminal after a tracked synthetic means the continuation actually
+        // ran, so clear the debt here rather than relying on execution.started
+        // alone (which the live stream may not deliver).
+        pendingDispatch.continuation = false
         armInspection(sessionID, pendingDispatch)
         return
       }
