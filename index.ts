@@ -15,6 +15,7 @@
  * @see https://github.com/malhashemi/opencode-sessions
  */
 
+import { randomUUID } from "node:crypto"
 import { readdir, readFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -109,6 +110,22 @@ export default Plugin.define({
       dispatchedAt: number
       deadlineTimer?: ReturnType<typeof setTimeout>
       inspecting?: boolean
+      pendingBackground?: Map<string, number>
+      settledBackground?: Set<string>
+      executing?: boolean
+      continuation?: boolean
+      activity?: number
+      relayID?: string
+      relayText?: string
+      relayIDs?: Array<string | undefined>
+      relayEpoch?: number
+      relayedIds?: Set<string>
+      relayAttempts?: number
+      relayTimer?: ReturnType<typeof setTimeout>
+      inspectTimer?: ReturnType<typeof setTimeout>
+      inspectQueued?: boolean
+      reinspectCount?: number
+      delivering?: boolean
     }
 
     const activeDispatches = new Map<string, ActiveDispatch>()
@@ -118,9 +135,15 @@ export default Plugin.define({
 
     const parentSessions = new Set<string>()
 
+    const errorRetryTimers = new Set<ReturnType<typeof setTimeout>>()
+
     const childResultRetryTimeoutMs = 36000000
 
     const childIdleSettleMs = 600
+
+    const relayRetryMs = 2000
+    const relayMaxAttempts = 3
+    const pendingResultReinspects = 5
 
     function validateSessionID(sessionID: string): string | null {
       if (!sessionID.startsWith("ses")) {
@@ -153,6 +176,7 @@ export default Plugin.define({
         model?: ModelOverride
         wake?: boolean
         beforePrompt?: () => void
+        id?: string
       },
       signal?: AbortSignal,
     ) {
@@ -179,14 +203,19 @@ export default Plugin.define({
       }
       options.beforePrompt?.()
       return ctx.session.prompt(
-        { sessionID, text: options.text, resume: options.wake !== false },
+        {
+          sessionID,
+          text: options.text,
+          resume: options.wake !== false,
+          ...(options.id ? { id: options.id } : {}),
+        },
         requestOptions,
       )
     }
 
     async function relayToParent(
       parentSessionID: string,
-      options: { text: string; wake?: boolean },
+      options: { text: string; wake?: boolean; id?: string },
     ) {
       await sendPrompt(parentSessionID, options)
     }
@@ -234,7 +263,7 @@ export default Plugin.define({
 
     function isCompletedAssistantMessage(message: NormalizedMessage) {
       return (
-        message.role === "assistant" && (message.time.created ?? 0) > 0
+        message.role === "assistant" && (message.time.completed ?? 0) > 0
       )
     }
 
@@ -334,42 +363,123 @@ export default Plugin.define({
       if (dispatch && current !== dispatch) return undefined
       activeDispatches.delete(sessionID)
       if (current.deadlineTimer) clearTimeout(current.deadlineTimer)
+      if (current.relayTimer) clearTimeout(current.relayTimer)
+      if (current.inspectTimer) clearTimeout(current.inspectTimer)
       return current
     }
 
-    async function failActiveDispatch(
+    function failActiveDispatch(
       sessionID: string,
       dispatch: ActiveDispatch,
       message: string,
     ) {
-      const settledDispatch = removeActiveDispatch(sessionID, dispatch)
-      if (!settledDispatch) return
+      relayError(
+        sessionID,
+        dispatch,
+        `Error: ${message}\n\nThe result could not be recovered. Send your next instruction when ready.`,
+      )
+    }
 
-      // Clean compaction flag so a retry on this session isn't falsely
-      // notified and the error relay can report it too.
-      const wasCompacted = compactedChildren.delete(sessionID)
+    function hasObligations(dispatch: ActiveDispatch) {
+      return (
+        (dispatch.pendingBackground?.size ?? 0) > 0 ||
+        dispatch.continuation === true ||
+        dispatch.executing === true
+      )
+    }
 
-      if (!settledDispatch.reportBack) {
+    // Schedule one deferred inspection per dispatch. The flag coalesces
+    // repeated turn-end events; a stale inspection re-arms it (see
+    // inspectChildResult) so a trigger is never dropped. Returns whether a
+    // fresh inspection was actually queued.
+    function armInspection(sessionID: string, dispatch: ActiveDispatch) {
+      if (dispatch.inspectQueued) return false
+      dispatch.inspectQueued = true
+      dispatch.inspectTimer = setTimeout(() => {
+        dispatch.inspectQueued = false
+        if (
+          eventController.signal.aborted ||
+          activeDispatches.get(sessionID) !== dispatch ||
+          abortedChildren.has(sessionID)
+        )
+          return
+        void inspectChildResult(sessionID)
+      }, childIdleSettleMs)
+      return true
+    }
+
+    // Bounded re-inspection for projection lag or a transient read failure. On
+    // exhaustion, surface through the deadline path instead of waiting 10h.
+    function reinspectWithLimit(sessionID: string, dispatch: ActiveDispatch) {
+      if (activeDispatches.get(sessionID) !== dispatch) return
+      if (abortedChildren.has(sessionID)) return
+      const count = dispatch.reinspectCount ?? 0
+      if (count >= pendingResultReinspects) {
+        failActiveDispatch(
+          sessionID,
+          dispatch,
+          "Result did not project before the retry limit.",
+        )
         return
       }
-
-      const errorBody = `Error: ${message}\n\nThe result could not be recovered. Send your next instruction when ready.`
-
-      try {
-        await relayToParent(settledDispatch.parentSessionID, {
-          wake: false,
-          text: formatChildResult(
-            settledDispatch,
-            errorBody,
-            undefined,
-            undefined,
-            wasCompacted,
-            "Step failed.",
-          ),
-        })
-      } catch {
-        // Silently fail - plugin should not loop on notification errors
+      if (armInspection(sessionID, dispatch)) {
+        dispatch.reinspectCount = count + 1
       }
+    }
+
+    // Independent terminal-error delivery: immutable payload + stable id with
+    // bounded retries, so a result relay in flight can never suppress it.
+    function deliverError(
+      dispatch: ActiveDispatch,
+      body: string,
+      wasCompacted: boolean,
+      title = "Step failed.",
+    ) {
+      if (!dispatch.reportBack) return
+      const text = formatChildResult(
+        dispatch,
+        body,
+        undefined,
+        undefined,
+        wasCompacted,
+        title,
+      )
+      const id = `msg_${randomUUID()}`
+      let attempts = 0
+      const attempt = () => {
+        if (eventController.signal.aborted) return
+        attempts += 1
+        relayToParent(dispatch.parentSessionID, { wake: false, id, text }).catch(
+          (error) => {
+            if (eventController.signal.aborted) return
+            if (attempts < relayMaxAttempts) {
+              const timer = setTimeout(() => {
+                errorRetryTimers.delete(timer)
+                attempt()
+              }, relayRetryMs)
+              errorRetryTimers.add(timer)
+            } else {
+              console.error(
+                `[spin] failed to relay error for child ${dispatch.childSessionID}`,
+                error,
+              )
+            }
+          },
+        )
+      }
+      attempt()
+    }
+
+    // Claims the dispatch before delivery so a later failure event or a stale
+    // result relay cannot double-relay or retire it.
+    function relayError(
+      sessionID: string,
+      dispatch: ActiveDispatch,
+      body: string,
+      title = "Step failed.",
+    ) {
+      if (!removeActiveDispatch(sessionID, dispatch)) return
+      deliverError(dispatch, body, compactedChildren.delete(sessionID), title)
     }
 
     async function inspectChildResult(sessionID: string) {
@@ -377,21 +487,62 @@ export default Plugin.define({
       if (!activeDispatch || activeDispatch.inspecting) {
         return
       }
+      if ((activeDispatch.relayAttempts ?? 0) >= relayMaxAttempts) {
+        return
+      }
 
       activeDispatch.inspecting = true
 
       try {
+        const token = activeDispatch.activity ?? 0
+        if (hasObligations(activeDispatch)) {
+          activeDispatch.inspecting = false
+          return
+        }
+
         const messages = await getSessionMessages(sessionID)
 
-        const assistantMessages = messages.filter(
-          (message) =>
-            isCompletedAssistantMessage(message) &&
-            message.time.created >= activeDispatch.dispatchedAt,
-        )
-
-        const latest = assistantMessages[assistantMessages.length - 1]
-        if (!latest) {
+        if (activeDispatches.get(sessionID) !== activeDispatch) {
           activeDispatch.inspecting = false
+          return
+        }
+        if ((activeDispatch.activity ?? 0) !== token) {
+          activeDispatch.inspecting = false
+          if (!hasObligations(activeDispatch))
+            armInspection(sessionID, activeDispatch)
+          return
+        }
+        if (hasObligations(activeDispatch)) {
+          activeDispatch.inspecting = false
+          return
+        }
+
+        const unrelayed = messages.filter(
+          (message) =>
+            message.role === "assistant" &&
+            message.time.created >= activeDispatch.dispatchedAt &&
+            !(message.id && activeDispatch.relayedIds?.has(message.id)),
+        )
+        const assistantMessages = unrelayed.filter(isCompletedAssistantMessage)
+
+        if (!assistantMessages.length) {
+          activeDispatch.inspecting = false
+          if (unrelayed.length) {
+            // A newer assistant message exists but its completion has not
+            // projected yet; re-inspect a bounded number of times, then
+            // surface via the deadline path rather than waiting 10h.
+            reinspectWithLimit(sessionID, activeDispatch)
+            return
+          }
+          // No un-relayed assistant message after the boundary. If a batch was
+          // already delivered the task is done; otherwise it has produced no
+          // text yet, so keep waiting for a later turn-end.
+          if (activeDispatch.relayedIds) {
+            if (removeActiveDispatch(sessionID, activeDispatch)) {
+              compactedChildren.delete(sessionID)
+            }
+            return
+          }
           console.info("[spin] child wait ended before a new assistant result", {
             childSessionID: sessionID,
             parentSessionID: activeDispatch.parentSessionID,
@@ -399,19 +550,21 @@ export default Plugin.define({
           return
         }
 
-        const settledDispatch = removeActiveDispatch(sessionID, activeDispatch)
-        if (!settledDispatch) return
-
-        if (!settledDispatch.reportBack) {
-          compactedChildren.delete(sessionID)
+        if (!activeDispatch.reportBack) {
+          if (removeActiveDispatch(sessionID, activeDispatch)) {
+            compactedChildren.delete(sessionID)
+          }
           if (parentSessions.has(sessionID)) {
             await checkParentContext(sessionID)
           }
           return
         }
 
-        const text = extractTextParts(latest.parts)
-        const sessionSummary = summarizeSessionContent(messages)
+        const latest = assistantMessages[assistantMessages.length - 1]
+        const text = assistantMessages
+          .map((message) => extractTextParts(message.parts))
+          .filter(Boolean)
+          .join("\n\n")
 
         const sessionError =
           typeof latest.error === "string"
@@ -420,21 +573,80 @@ export default Plugin.define({
               ? String((latest.error as { message?: unknown }).message)
               : undefined
 
-        const payload = formatChildResult(
-          settledDispatch,
+        activeDispatch.relayText ??= `${formatChildResult(
+          activeDispatch,
           sessionError ? `${text}\n\nSession error: ${sessionError}` : text,
           { tokens: latest.tokens },
-          sessionSummary,
-          compactedChildren.delete(sessionID),
-        )
+          summarizeSessionContent(messages),
+          compactedChildren.has(sessionID),
+        )}\n\nUser is unaware of this message. Decide next step: dispatch again, ask user, or stop.`
+        activeDispatch.relayID ??= `msg_${randomUUID()}`
+        activeDispatch.relayIDs ??= assistantMessages.map((message) => message.id)
+        activeDispatch.relayEpoch ??= activeDispatch.activity ?? 0
 
-        await relayToParent(settledDispatch.parentSessionID, {
-          wake: true,
-          text: `${payload}\n\nUser is unaware of this message. Decide next step: dispatch again, ask user, or stop.`,
-        })
+        activeDispatch.delivering = true
+        try {
+          await relayToParent(activeDispatch.parentSessionID, {
+            wake: true,
+            id: activeDispatch.relayID,
+            text: activeDispatch.relayText,
+          })
+        } catch (error) {
+          activeDispatch.delivering = false
+          activeDispatch.inspecting = false
+          // A dispatch removed underneath us (e.g. a failed/interrupted event
+          // claimed it) must not be retried or retired here.
+          if (activeDispatches.get(sessionID) !== activeDispatch) return
+          const attempts = (activeDispatch.relayAttempts ?? 0) + 1
+          activeDispatch.relayAttempts = attempts
+          if (attempts < relayMaxAttempts) {
+            activeDispatch.relayTimer = setTimeout(() => {
+              if (activeDispatches.get(sessionID) !== activeDispatch) return
+              void inspectChildResult(sessionID)
+            }, relayRetryMs)
+          } else {
+            console.error(`[spin] failed to relay child ${sessionID}`, error)
+          }
+          return
+        }
+        activeDispatch.delivering = false
+
+        // The relay succeeded, but a continuation may have started while it
+        // awaited; keep the dispatch and re-inspect the appended output.
+        if (activeDispatches.get(sessionID) !== activeDispatch) {
+          activeDispatch.inspecting = false
+          return
+        }
+
+        const batchEpoch = activeDispatch.relayEpoch ?? token
+        activeDispatch.relayedIds ??= new Set()
+        for (const id of activeDispatch.relayIDs ?? []) {
+          if (id) activeDispatch.relayedIds.add(id)
+        }
+        activeDispatch.relayText = undefined
+        activeDispatch.relayID = undefined
+        activeDispatch.relayIDs = undefined
+        activeDispatch.relayEpoch = undefined
+        activeDispatch.relayAttempts = 0
+        activeDispatch.reinspectCount = 0
+
+        if (
+          (activeDispatch.activity ?? 0) !== batchEpoch ||
+          hasObligations(activeDispatch)
+        ) {
+          activeDispatch.inspecting = false
+          if (!hasObligations(activeDispatch))
+            armInspection(sessionID, activeDispatch)
+          return
+        }
+
+        if (removeActiveDispatch(sessionID, activeDispatch)) {
+          compactedChildren.delete(sessionID)
+        }
       } catch (error) {
         activeDispatch.inspecting = false
         console.error(`[spin] failed to inspect child ${sessionID}`, error)
+        reinspectWithLimit(sessionID, activeDispatch)
       }
     }
 
@@ -638,13 +850,85 @@ export default Plugin.define({
         return
       }
 
-      // Turn-end trigger. This server emits session.execution.succeeded at
-      // turn end; session.idle may never fire. Both feed the same
-      // inspection, and the inspecting flag dedups back-to-back arrivals.
-      if (
-        event.type === "session.idle" ||
-        event.type === "session.execution.succeeded"
-      ) {
+      if (event.type === "session.tool.success") {
+        const dispatch = activeDispatches.get(event.data.sessionID)
+        const metadata = event.data.metadata
+        if (
+          dispatch &&
+          metadata &&
+          (metadata.status === "running" || metadata.running === true)
+        ) {
+          const key =
+            typeof metadata.shellID === "string"
+              ? metadata.shellID
+              : typeof metadata.sessionID === "string"
+                ? metadata.sessionID
+                : undefined
+          if (key && !dispatch.settledBackground?.has(key)) {
+            if (!dispatch.pendingBackground) dispatch.pendingBackground = new Map()
+            dispatch.pendingBackground.set(
+              key,
+              (dispatch.pendingBackground.get(key) ?? 0) + 1,
+            )
+            dispatch.activity = (dispatch.activity ?? 0) + 1
+          }
+        }
+        return
+      }
+
+      if (event.type === "session.synthetic") {
+        const dispatch = activeDispatches.get(event.data.sessionID)
+        if (dispatch) {
+          const metadata = event.data.metadata
+          if (metadata?.source === "shell" || metadata?.source === "subagent") {
+            const key =
+              typeof metadata.shellID === "string"
+                ? metadata.shellID
+                : typeof metadata.jobID === "string"
+                  ? metadata.jobID
+                  : typeof metadata.childID === "string"
+                    ? metadata.childID
+                    : undefined
+            const pending = dispatch.pendingBackground
+            const count = key ? pending?.get(key) ?? 0 : 0
+            const tracked = count > 0
+            if (tracked && key && pending) {
+              if (count <= 1) pending.delete(key)
+              else pending.set(key, count - 1)
+            }
+            if (key) {
+              if (!dispatch.settledBackground) dispatch.settledBackground = new Set()
+              dispatch.settledBackground.add(key)
+            }
+            // Only a completed tracked obligation proves a continuation turn
+            // will follow; an unrelated synthetic (e.g. a user command) must
+            // not create continuation debt.
+            if (tracked) {
+              if (!dispatch.executing) dispatch.continuation = true
+              dispatch.activity = (dispatch.activity ?? 0) + 1
+            }
+          }
+        }
+        return
+      }
+
+      if (event.type === "session.execution.started") {
+        const dispatch = activeDispatches.get(event.data.sessionID)
+        if (dispatch) {
+          dispatch.executing = true
+          dispatch.continuation = false
+          // A new execution may reuse a settled session id for a fresh
+          // background job; allow that job to be tracked again.
+          dispatch.settledBackground?.clear()
+          dispatch.reinspectCount = 0
+          dispatch.activity = (dispatch.activity ?? 0) + 1
+        }
+        return
+      }
+
+      // Turn-end trigger. Settle only on the durable execution end, and only
+      // once no background obligation and no unconsumed continuation remain.
+      if (event.type === "session.execution.succeeded") {
         const sessionID = event.data.sessionID
         if (abortedChildren.delete(sessionID)) return
 
@@ -653,21 +937,8 @@ export default Plugin.define({
           if (parentSessions.has(sessionID)) await checkParentContext(sessionID)
           return
         }
-
-        if (!pendingDispatch.inspecting) {
-          void (async () => {
-            await new Promise((resolve) =>
-              setTimeout(resolve, childIdleSettleMs),
-            )
-            if (
-              eventController.signal.aborted ||
-              activeDispatches.get(sessionID) !== pendingDispatch ||
-              abortedChildren.has(sessionID)
-            )
-              return
-            await inspectChildResult(sessionID)
-          })()
-        }
+        pendingDispatch.executing = false
+        armInspection(sessionID, pendingDispatch)
         return
       }
 
@@ -681,29 +952,15 @@ export default Plugin.define({
       if (!activeDispatch) return
 
       abortedChildren.add(sessionID)
-      removeActiveDispatch(sessionID, activeDispatch)
-      const wasCompacted = compactedChildren.delete(sessionID)
-      if (!activeDispatch.reportBack) return
-
       const errorLabel =
         event.type === "session.execution.failed"
           ? event.data.error.message
           : `Turn interrupted (${event.data.reason}).`
-      try {
-        await relayToParent(activeDispatch.parentSessionID, {
-          wake: false,
-          text: formatChildResult(
-            activeDispatch,
-            `Error: ${errorLabel}\n\nThe turn has been aborted. Send your next instruction when ready.`,
-            undefined,
-            undefined,
-            wasCompacted,
-            "Step failed.",
-          ),
-        })
-      } catch {
-        // Best effort; the parent can still inspect the child session.
-      }
+      relayError(
+        sessionID,
+        activeDispatch,
+        `Error: ${errorLabel}\n\nThe turn has been aborted. Send your next instruction when ready.`,
+      )
     }
 
     const sessionInput = {
@@ -863,31 +1120,45 @@ export default Plugin.define({
               content: `Session ${sessionID} has no active dispatch; nothing to interrupt.`,
             }
 
-          removeActiveDispatch(sessionID, activeDispatch)
-          abortedChildren.add(sessionID)
+          // Claim ownership before awaiting cancellation so an in-flight
+          // result relay cannot retire the dispatch and suppress this relay.
+          const removed = removeActiveDispatch(sessionID, activeDispatch)
           const wasCompacted = compactedChildren.delete(sessionID)
-          await ctx.session.interrupt(
-            { sessionID, resume: false },
-            { signal: toolCtx.signal },
-          )
 
-          if (activeDispatch.reportBack) {
-            try {
-              await relayToParent(activeDispatch.parentSessionID, {
-                wake: false,
-                text: formatChildResult(
-                  activeDispatch,
-                  "Turn was interrupted.\nSend your next instruction when ready.",
-                  undefined,
-                  undefined,
-                  wasCompacted,
-                  "Turn interrupted.",
-                ),
-              })
-            } catch {
-              // Best effort; the child remains available for a follow-up.
+          let cancelled = true
+          let interruptError: unknown
+          try {
+            await ctx.session.interrupt(
+              { sessionID, resume: false },
+              { signal: toolCtx.signal },
+            )
+          } catch (error) {
+            cancelled = false
+            interruptError = error
+          }
+
+          if (cancelled) abortedChildren.add(sessionID)
+          if (removed) {
+            if (cancelled) {
+              deliverError(
+                activeDispatch,
+                "Turn was interrupted.\nSend your next instruction when ready.",
+                wasCompacted,
+                "Turn interrupted.",
+              )
+            } else {
+              const detail =
+                interruptError instanceof Error
+                  ? interruptError.message
+                  : String(interruptError)
+              deliverError(
+                activeDispatch,
+                `Error: interrupt failed: ${detail}.\n\nThe turn may still be running. Send your next instruction when ready.`,
+                wasCompacted,
+              )
             }
           }
+          if (!cancelled) throw interruptError
           return { content: `Turn for session ${sessionID} was interrupted.` }
         },
       })
@@ -914,7 +1185,11 @@ export default Plugin.define({
       eventController.abort()
       for (const dispatch of activeDispatches.values()) {
         if (dispatch.deadlineTimer) clearTimeout(dispatch.deadlineTimer)
+        if (dispatch.relayTimer) clearTimeout(dispatch.relayTimer)
+        if (dispatch.inspectTimer) clearTimeout(dispatch.inspectTimer)
       }
+      for (const timer of errorRetryTimers) clearTimeout(timer)
+      errorRetryTimers.clear()
     }
   },
 })

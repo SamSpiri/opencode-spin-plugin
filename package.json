@@ -39,6 +39,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "test": "bun run test/spin.test.mjs",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
     "install:opencode": "npm run build && node scripts/install.mjs"
